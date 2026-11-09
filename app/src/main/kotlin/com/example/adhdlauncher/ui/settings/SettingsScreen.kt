@@ -22,8 +22,10 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DynamicFeed
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.adhdlauncher.data.AiProviderType
+import com.example.adhdlauncher.data.AppCategory
 import com.example.adhdlauncher.data.AppInfo
 import com.example.adhdlauncher.data.ClockPosition
 import com.example.adhdlauncher.data.DiscoverMode
@@ -472,9 +475,15 @@ private fun DrawerSettingsView(
     val sortOrder by preferences.drawerSortOrder.collectAsState()
     val columns by preferences.drawerColumns.collectAsState()
     val handedness by preferences.handedness.collectAsState()
+    val categoryCustomNames by preferences.categoryCustomNames.collectAsState()
+    val hiddenCategories by preferences.hiddenCategories.collectAsState()
+    val categoryOrder by preferences.categoryOrder.collectAsState()
 
     var showGridPropertiesDialog by remember { mutableStateOf(false) }
     var showHiddenAppsDialog by remember { mutableStateOf(false) }
+    var showCategoryManageDialog by remember { mutableStateOf(false) }
+    var editingCategory by remember { mutableStateOf<AppCategory?>(null) }
+    var editingCategoryName by remember { mutableStateOf("") }
     var advancedExpanded by remember { mutableStateOf(true) }
 
     val hiddenAppsCount = remember(apps) { apps.count { it.isHidden } }
@@ -510,6 +519,12 @@ private fun DrawerSettingsView(
             icon = Icons.Default.Visibility,
             title = "非表示アプリの管理（現在 ${hiddenAppsCount}個）",
             onClick = { showHiddenAppsDialog = true }
+        )
+
+        SubPageNavRow(
+            icon = Icons.Default.Category,
+            title = "カテゴリーの管理（名称変更・並び替え・非表示）",
+            onClick = { showCategoryManageDialog = true }
         )
 
         HorizontalDivider(
@@ -793,6 +808,189 @@ private fun DrawerSettingsView(
             confirmButton = {
                 TextButton(onClick = { showHiddenAppsDialog = false }) {
                     Text("完了", color = AccentCyan)
+                }
+            }
+        )
+    }
+
+    // カテゴリー管理ダイアログ（名称変更・並び替え・タブ表示ON/OFF）
+    if (showCategoryManageDialog) {
+        AlertDialog(
+            onDismissRequest = { showCategoryManageDialog = false },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("カテゴリーの管理", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    TextButton(onClick = { preferences.resetCategoriesToDefault() }) {
+                        Text("初期化", fontSize = 12.sp, color = AccentCyan)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "鉛筆アイコンで名称変更、上下矢印で並び替え、チェックでタブの表示/非表示を切り替えられます。",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                    val nonAllCategories = categoryOrder.filter { it != AppCategory.ALL }
+                    categoryOrder.forEach { cat ->
+                        val label = categoryCustomNames[cat] ?: cat.displayName
+                        val isAll = (cat == AppCategory.ALL)
+                        val isVisible = cat !in hiddenCategories
+                        val idxInNonAll = nonAllCategories.indexOf(cat)
+
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color.White.copy(alpha = 0.05f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Checkbox(
+                                        checked = isVisible,
+                                        enabled = !isAll,
+                                        onCheckedChange = { checked ->
+                                            preferences.setCategoryHidden(cat, !checked)
+                                        }
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.White
+                                        )
+                                        if (label != cat.displayName) {
+                                            Text(
+                                                text = "標準: ${cat.displayName}",
+                                                fontSize = 11.sp,
+                                                color = Color.White.copy(alpha = 0.45f)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (!isAll) {
+                                        IconButton(
+                                            onClick = { preferences.moveCategoryOrder(cat, moveUp = true) },
+                                            enabled = idxInNonAll > 0,
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowUp,
+                                                contentDescription = "上へ",
+                                                tint = if (idxInNonAll > 0) Color.White else Color.White.copy(alpha = 0.2f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { preferences.moveCategoryOrder(cat, moveUp = false) },
+                                            enabled = idxInNonAll >= 0 && idxInNonAll < nonAllCategories.lastIndex,
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardArrowDown,
+                                                contentDescription = "下へ",
+                                                tint = if (idxInNonAll < nonAllCategories.lastIndex) Color.White else Color.White.copy(alpha = 0.2f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                    }
+                                    IconButton(
+                                        onClick = {
+                                            editingCategory = cat
+                                            editingCategoryName = label
+                                        },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "名称変更",
+                                            tint = AccentCyan,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showCategoryManageDialog = false }) {
+                    Text("完了", color = AccentCyan)
+                }
+            }
+        )
+    }
+
+    // 個別カテゴリー名称変更ダイアログ
+    editingCategory?.let { targetCat ->
+        AlertDialog(
+            onDismissRequest = { editingCategory = null },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = { Text("カテゴリー名の変更", fontSize = 17.sp, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        text = "標準名: ${targetCat.displayName}（空欄で保存すると標準名に戻ります）",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    OutlinedTextField(
+                        value = editingCategoryName,
+                        onValueChange = { editingCategoryName = it },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingCategory = null }) {
+                    Text("キャンセル", color = Color.White.copy(alpha = 0.6f))
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        preferences.setCategoryCustomName(targetCat, editingCategoryName)
+                        editingCategory = null
+                    }
+                ) {
+                    Text("保存", color = AccentCyan, fontWeight = FontWeight.Bold)
                 }
             }
         )

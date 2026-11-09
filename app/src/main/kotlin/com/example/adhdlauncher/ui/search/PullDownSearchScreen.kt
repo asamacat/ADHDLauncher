@@ -140,13 +140,223 @@ fun PullDownSearchScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 20.dp, vertical = 14.dp)
+                .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            // 1. 最上部: ピル型検索バー ＋ 右端「⋮」メニューボタン（プレースホルダ簡潔化）
+            // 1. 上部空白タップで閉じる（下スワイプ時もアプリアイコンと検索バーを親指が届く画面下部へ寄せる）
+            if (!showAllAppsInSearch) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                keyboardController?.hide()
+                                onClose()
+                            }
+                        )
+                )
+            }
+
+            // 2. 検索キーワード入力時の AIクイックアンサー枠 & Webサジェスト & Playストア検索アクション
+            if (query.isNotBlank()) {
+                if (aiQuickAnswerEnabled) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                keyboardController?.hide()
+                                if (aiApiKey.isBlank()) {
+                                    onOpenSearchSettings()
+                                }
+                            }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.AutoAwesome,
+                                contentDescription = null,
+                                tint = Color(0xFF94A88B),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Column {
+                                Text(
+                                    text = "AIに「$query」を即答させる",
+                                    fontSize = 14.sp,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = if (aiApiKey.isBlank()) "設定からAPIキーを登録すると利用できます" else "API連携枠（準備完了）",
+                                    fontSize = 11.sp,
+                                    color = Color.White.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.CallMade,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                if (enableWebSuggest) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                keyboardController?.hide()
+                                val uri = Uri.parse(searchProvider.queryUrlPrefix + Uri.encode(query))
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Search,
+                                contentDescription = null,
+                                tint = Color(0xFF82B1FF),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "「$query」を ${searchProvider.label} で検索",
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.CallMade,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                if (enablePlayStore) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                keyboardController?.hide()
+                                val uri = Uri.parse("https://play.google.com/store/search?q=${Uri.encode(query)}&c=apps")
+                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                            }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Shop,
+                                contentDescription = null,
+                                tint = Color(0xFF81C784),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = "Playストアで「$query」を検索",
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.CallMade,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            // 3. セクションヘッダー: 左「よく使うアプリ」 / 右「すべて表示」
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 18.dp),
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (query.isBlank()) "すべてのアプリ" else "一致するアプリ (${displayedApps.size})",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White.copy(alpha = 0.5f)
+                )
+                if (query.isBlank()) {
+                    Text(
+                        text = if (showAllAppsInSearch) "折りたたむ" else "すべて表示",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.55f),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                showAllAppsInSearch = !showAllAppsInSearch
+                            }
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // 4. 下部親指ゾーン：よく使うアプリ4つ（または検索ヒット一覧）
+            if (displayedApps.isNotEmpty()) {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(4),
+                    reverseLayout = showAllAppsInSearch,
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = if (showAllAppsInSearch) {
+                        Modifier.weight(1f)
+                    } else {
+                        Modifier.wrapContentHeight()
+                    }
+                ) {
+                    items(
+                        items = displayedApps,
+                        key = { "${it.packageName}:${it.activityName}" }
+                    ) { app ->
+                        SearchAppTile(
+                            app = app,
+                            onClick = {
+                                keyboardController?.hide()
+                                onAppClick(app)
+                            }
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    text = "一致するアプリはありません",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.45f),
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 5. 最下部（キーボード直上）: ピル型検索バー ＋ 右端「⋮」メニューボタン
+            Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
@@ -231,209 +441,6 @@ fun PullDownSearchScreen(
                     )
                 }
             }
-
-            // 2. セクションヘッダー: 左「すべてのアプリ」 / 右「すべて表示」（インライン展開・折りたたみ対応）
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = if (query.isBlank()) "すべてのアプリ" else "一致するアプリ (${displayedApps.size})",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
-                if (query.isBlank()) {
-                    Text(
-                        text = if (showAllAppsInSearch) "折りたたむ" else "すべて表示",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White.copy(alpha = 0.55f),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable {
-                                showAllAppsInSearch = !showAllAppsInSearch
-                            }
-                            .padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 3. よく使うアプリ4つ（または検索ヒット一覧）
-            if (displayedApps.isNotEmpty()) {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(4),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f, fill = false)
-                ) {
-                    items(
-                        items = displayedApps,
-                        key = { "${it.packageName}:${it.activityName}" }
-                    ) { app ->
-                        SearchAppTile(
-                            app = app,
-                            onClick = {
-                                keyboardController?.hide()
-                                onAppClick(app)
-                            }
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    text = "一致するアプリはありません",
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.45f),
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-
-            // 4. 検索キーワード入力時の AIクイックアンサー枠 & Webサジェスト & Playストア検索アクション
-            if (query.isNotBlank()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (aiQuickAnswerEnabled) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                keyboardController?.hide()
-                                if (aiApiKey.isBlank()) {
-                                    onOpenSearchSettings()
-                                }
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.AutoAwesome,
-                                contentDescription = null,
-                                tint = Color(0xFF94A88B),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Column {
-                                Text(
-                                    text = "AIに「$query」を即答させる",
-                                    fontSize = 14.sp,
-                                    color = Color.White
-                                )
-                                Text(
-                                    text = if (aiApiKey.isBlank()) "設定からAPIキーを登録すると利用できます" else "API連携枠（準備完了）",
-                                    fontSize = 11.sp,
-                                    color = Color.White.copy(alpha = 0.5f)
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallMade,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                if (enableWebSuggest) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                keyboardController?.hide()
-                                val uri = Uri.parse(searchProvider.queryUrlPrefix + Uri.encode(query))
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                tint = Color(0xFF82B1FF),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "「$query」を ${searchProvider.label} で検索",
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallMade,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                if (enablePlayStore) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                keyboardController?.hide()
-                                val uri = Uri.parse("https://play.google.com/store/search?q=${Uri.encode(query)}&c=apps")
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
-                            }
-                            .padding(vertical = 12.dp, horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Shop,
-                                contentDescription = null,
-                                tint = Color(0xFF81C784),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = "Playストアで「$query」を検索",
-                                fontSize = 14.sp,
-                                color = Color.White
-                            )
-                        }
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.CallMade,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-
-            // 下部空白タップで閉じる
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .clickable(
-                        interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                        indication = null,
-                        onClick = {
-                            keyboardController?.hide()
-                            onClose()
-                        }
-                    )
-            )
         }
     }
 }

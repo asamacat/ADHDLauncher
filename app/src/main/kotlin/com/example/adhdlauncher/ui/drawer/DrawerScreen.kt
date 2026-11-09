@@ -80,6 +80,13 @@ fun DrawerScreen(
     val sortOrder by preferences.drawerSortOrder.collectAsState()
     val columns by preferences.drawerColumns.collectAsState()
     val gestureSwipeDownCloseDrawer by preferences.gestureSwipeDownCloseDrawer.collectAsState()
+    val categoryCustomNames by preferences.categoryCustomNames.collectAsState()
+    val hiddenCategories by preferences.hiddenCategories.collectAsState()
+    val categoryOrder by preferences.categoryOrder.collectAsState()
+
+    val visibleCategories = remember(categoryOrder, hiddenCategories) {
+        categoryOrder.filter { it == AppCategory.ALL || it !in hiddenCategories }
+    }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf(AppCategory.ALL) }
@@ -99,7 +106,12 @@ fun DrawerScreen(
         }
     }
 
-    // カテゴリや検索クエリが変わったら先頭（最下段の初期表示位置）へ戻す
+    // 選択中カテゴリが非表示化された場合は「すべて」へ戻す
+    LaunchedEffect(visibleCategories) {
+        if (selectedCategory !in visibleCategories) {
+            selectedCategory = AppCategory.ALL
+        }
+    }
     LaunchedEffect(selectedCategory, searchQuery) {
         gridState.scrollToItem(0)
     }
@@ -275,7 +287,7 @@ fun DrawerScreen(
                 }
             }
 
-            // 2. 下部親指ゾーン: カテゴリタブ（設定でON/OFF可能）
+            // 2. 下部親指ゾーン: カテゴリタブ（設定でON/OFF・名称変更・順序変更可能）
             if (showCategoryBar) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -283,14 +295,15 @@ fun DrawerScreen(
                         .fillMaxWidth()
                         .padding(vertical = 6.dp)
                 ) {
-                    items(AppCategory.values()) { category ->
+                    items(visibleCategories) { category ->
                         val isSelected = category == selectedCategory
+                        val label = categoryCustomNames[category] ?: category.displayName
                         FilterChip(
                             selected = isSelected,
                             onClick = { selectedCategory = category },
                             label = {
                                 Text(
-                                    text = category.displayName,
+                                    text = label,
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                     color = if (isSelected) Color.Black else Color.White.copy(alpha = 0.85f)
@@ -415,8 +428,9 @@ fun DrawerScreen(
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF90CAF9)
                     )
-                    AppCategory.values().filter { it != AppCategory.ALL }.forEach { cat ->
+                    categoryOrder.filter { it != AppCategory.ALL }.forEach { cat ->
                         val isCurrent = (targetApp.category == cat)
+                        val catLabel = categoryCustomNames[cat] ?: cat.displayName
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = if (isCurrent) Color(0xFF2979FF).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.05f),
@@ -436,7 +450,7 @@ fun DrawerScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = cat.displayName,
+                                    text = catLabel,
                                     fontSize = 14.sp,
                                     fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal,
                                     color = Color.White

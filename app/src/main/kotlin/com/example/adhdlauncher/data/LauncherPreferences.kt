@@ -210,6 +210,96 @@ class LauncherPreferences(context: Context) {
     )
     val aiQuickAnswerEnabled: StateFlow<Boolean> = _aiQuickAnswerEnabled.asStateFlow()
 
+    // --- カテゴリ管理（カスタム名称・表示ON/OFF・カスタム順序） ---
+    private val _categoryCustomNames = MutableStateFlow(loadCategoryCustomNames())
+    val categoryCustomNames: StateFlow<Map<AppCategory, String>> = _categoryCustomNames.asStateFlow()
+
+    private val _hiddenCategories = MutableStateFlow(loadHiddenCategories())
+    val hiddenCategories: StateFlow<Set<AppCategory>> = _hiddenCategories.asStateFlow()
+
+    private val _categoryOrder = MutableStateFlow(loadCategoryOrder())
+    val categoryOrder: StateFlow<List<AppCategory>> = _categoryOrder.asStateFlow()
+
+    private fun loadCategoryCustomNames(): Map<AppCategory, String> {
+        val map = mutableMapOf<AppCategory, String>()
+        for (cat in AppCategory.values()) {
+            val saved = prefs.getString("cat_label_${cat.name}", null)
+            if (!saved.isNullOrBlank()) {
+                map[cat] = saved
+            }
+        }
+        return map
+    }
+
+    private fun loadHiddenCategories(): Set<AppCategory> {
+        val raw = prefs.getStringSet(KEY_HIDDEN_CATEGORIES, emptySet()) ?: emptySet()
+        return raw.mapNotNull { name ->
+            runCatching { AppCategory.valueOf(name) }.getOrNull()
+        }.filter { it != AppCategory.ALL }.toSet()
+    }
+
+    private fun loadCategoryOrder(): List<AppCategory> {
+        val raw = prefs.getString(KEY_CATEGORY_ORDER, null)
+        if (raw.isNullOrBlank()) return AppCategory.values().toList()
+        val parsed = raw.split(",")
+            .mapNotNull { runCatching { AppCategory.valueOf(it.trim()) }.getOrNull() }
+            .distinct()
+        val missing = AppCategory.values().filter { it !in parsed }
+        val full = parsed + missing
+        // ALL は常に先頭に固定
+        return listOf(AppCategory.ALL) + full.filter { it != AppCategory.ALL }
+    }
+
+    fun getCategoryLabel(category: AppCategory): String {
+        return _categoryCustomNames.value[category] ?: category.displayName
+    }
+
+    fun setCategoryCustomName(category: AppCategory, customName: String) {
+        val trimmed = customName.trim()
+        if (trimmed.isEmpty() || trimmed == category.displayName) {
+            prefs.edit().remove("cat_label_${category.name}").apply()
+        } else {
+            prefs.edit().putString("cat_label_${category.name}", trimmed).apply()
+        }
+        _categoryCustomNames.value = loadCategoryCustomNames()
+    }
+
+    fun setCategoryHidden(category: AppCategory, hidden: Boolean) {
+        if (category == AppCategory.ALL) return
+        val current = _hiddenCategories.value.toMutableSet()
+        if (hidden) current.add(category) else current.remove(category)
+        prefs.edit().putStringSet(KEY_HIDDEN_CATEGORIES, current.map { it.name }.toSet()).apply()
+        _hiddenCategories.value = current
+    }
+
+    fun moveCategoryOrder(category: AppCategory, moveUp: Boolean) {
+        if (category == AppCategory.ALL) return
+        val nonAll = _categoryOrder.value.filter { it != AppCategory.ALL }.toMutableList()
+        val idx = nonAll.indexOf(category)
+        if (idx == -1) return
+        val targetIdx = if (moveUp) idx - 1 else idx + 1
+        if (targetIdx !in nonAll.indices) return
+        val tmp = nonAll[idx]
+        nonAll[idx] = nonAll[targetIdx]
+        nonAll[targetIdx] = tmp
+        val updated = listOf(AppCategory.ALL) + nonAll
+        prefs.edit().putString(KEY_CATEGORY_ORDER, updated.joinToString(",") { it.name }).apply()
+        _categoryOrder.value = updated
+    }
+
+    fun resetCategoriesToDefault() {
+        val editor = prefs.edit()
+        for (cat in AppCategory.values()) {
+            editor.remove("cat_label_${cat.name}")
+        }
+        editor.remove(KEY_HIDDEN_CATEGORIES)
+        editor.remove(KEY_CATEGORY_ORDER)
+        editor.apply()
+        _categoryCustomNames.value = emptyMap()
+        _hiddenCategories.value = emptySet()
+        _categoryOrder.value = AppCategory.values().toList()
+    }
+
     fun updateAnchorText(text: String) {
         prefs.edit().putString(KEY_ANCHOR_TEXT, text).apply()
         _anchorText.value = text
@@ -385,6 +475,9 @@ class LauncherPreferences(context: Context) {
         _aiModelName.value = AiProviderType.GEMINI.defaultModel
         _aiAutoCategorizeEnabled.value = true
         _aiQuickAnswerEnabled.value = true
+        _categoryCustomNames.value = emptyMap()
+        _hiddenCategories.value = emptySet()
+        _categoryOrder.value = AppCategory.values().toList()
     }
 
     fun isTrueBlackActive(): Boolean {
@@ -426,5 +519,7 @@ class LauncherPreferences(context: Context) {
         private const val KEY_AI_MODEL_NAME = "key_ai_model_name"
         private const val KEY_AI_AUTO_CATEGORIZE = "key_ai_auto_categorize"
         private const val KEY_AI_QUICK_ANSWER = "key_ai_quick_answer"
+        private const val KEY_HIDDEN_CATEGORIES = "key_hidden_categories"
+        private const val KEY_CATEGORY_ORDER = "key_category_order"
     }
 }
