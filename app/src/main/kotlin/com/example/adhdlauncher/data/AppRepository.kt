@@ -5,20 +5,35 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import com.example.adhdlauncher.ui.util.toImageBitmapOrNull
+import com.example.adhdlauncher.ui.util.toThemedImageBitmapOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Calendar
 
 class AppRepository(private val context: Context) {
 
     private val packageManager: PackageManager = context.packageManager
     private val usagePrefs = context.getSharedPreferences("adhd_app_usage", Context.MODE_PRIVATE)
     private var cachedApps: List<AppInfo>? = null
+    private var cachedIconStyle: IconStyle? = null
 
     private val usageComparator = compareByDescending<AppInfo> { it.launchCount }
         .thenByDescending { it.lastLaunchTime }
         .thenByDescending { it.systemUsageScore }
         .thenBy { it.label.lowercase() }
+
+    /**
+     * 現在時刻のコンテキストバケットキー（時間帯 0..5 × 平日/休日）
+     * ADHDユーザーの生活リズム（朝・昼・夕方・夜 × 平日・週末）に合わせて文脈スコアを記録・抽出する
+     */
+    private fun getCurrentContextBucketKey(): String {
+        val cal = Calendar.getInstance()
+        val hourBucket = cal.get(Calendar.HOUR_OF_DAY) / 4 // 0..5 (4時間単位)
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val isWeekend = (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)
+        val dayType = if (isWeekend) "wknd" else "wkdy"
+        return "ctx_${dayType}_h${hourBucket}"
+    }
 
     private fun querySystemUsageScores(): Map<String, Long> {
         return try {
@@ -37,8 +52,11 @@ class AppRepository(private val context: Context) {
         }
     }
 
-    suspend fun getInstalledApps(forceRefresh: Boolean = false): List<AppInfo> = withContext(Dispatchers.Default) {
-        if (!forceRefresh && cachedApps != null) {
+    suspend fun getInstalledApps(
+        forceRefresh: Boolean = false,
+        iconStyle: IconStyle = IconStyle.ORIGINAL
+    ): List<AppInfo> = withContext(Dispatchers.Default) {
+        if (!forceRefresh && cachedApps != null && cachedIconStyle == iconStyle) {
             return@withContext cachedApps!!
         }
 
@@ -51,6 +69,7 @@ class AppRepository(private val context: Context) {
         val resolveInfos = packageManager.queryIntentActivities(mainIntent, 0)
         val myPackageName = context.packageName
         val systemUsageMap = querySystemUsageScores()
+        val bucketKey = getCurrentContextBucketKey()
 
         val apps = resolveInfos
             .filter { it.activityInfo.packageName != myPackageName }
@@ -58,7 +77,7 @@ class AppRepository(private val context: Context) {
                 val activityInfo = resolveInfo.activityInfo
                 val pkg = activityInfo.packageName
                 val label = resolveInfo.loadLabel(packageManager).toString()
-                val iconBitmap = resolveInfo.loadIcon(packageManager).toImageBitmapOrNull(144)
+                val iconBitmap = resolveInfo.loadIcon(packageManager).toThemedImageBitmapOrNull(iconStyle, 144)
 
                 // 手動カテゴリ設定があれば優先、なければ自動分類
                 val customCatName = usagePrefs.getString("cat_$pkg", null)
@@ -72,6 +91,7 @@ class AppRepository(private val context: Context) {
                 val isHidden = usagePrefs.getBoolean("hidden_$pkg", false)
                 val count = usagePrefs.getInt("count_$pkg", usagePrefs.getInt(pkg, 0))
                 val lastTime = usagePrefs.getLong("time_$pkg", 0L)
+                val ctxScore = usagePrefs.getInt("${bucketKey}_$pkg", 0)
                 val sysScore = systemUsageMap[pkg] ?: 0L
 
                 AppInfo(
@@ -83,27 +103,55 @@ class AppRepository(private val context: Context) {
                     launchCount = count,
                     lastLaunchTime = lastTime,
                     systemUsageScore = sysScore,
+                    contextScore = ctxScore,
                     isHidden = isHidden
                 )
             }
             .sortedWith(usageComparator)
 
         cachedApps = apps
+        cachedIconStyle = iconStyle
         apps
+    }
+
+    /**
+     * 画面タップ時のハニカムショートカット用：
+     * 現在の曜日・時間帯の起動回数（contextScore）を最優先し、全体の起動回数・直近起動時刻・システム使用統計を組み合わせて上位N件を返す
+     */
+    fun getContextualTopApps(apps: List<AppInfo>, count: Int): List<AppInfo> {
+        val bucketKey = getCurrentContextBucketKey()
+        return apps
+            .filter { !it.isHidden }
+            .map { app ->
+                val freshCtx = usagePrefs.getInt("${bucketKey}_${app.packageName}", app.contextScore)
+                if (freshCtx != app.contextScore) app.copy(contextScore = freshCtx) else app
+            }
+            .sortedWith(
+                compareByDescending<AppInfo> { it.contextScore * 3 + it.launchCount }
+                    .thenByDescending { it.contextScore }
+                    .thenByDescending { it.lastLaunchTime }
+                    .thenByDescending { it.systemUsageScore }
+                    .thenBy { it.label.lowercase() }
+            )
+            .take(count.coerceIn(1, 12))
     }
 
     fun launchApp(app: AppInfo): List<AppInfo> {
         val newCount = app.launchCount + 1
         val now = System.currentTimeMillis()
+        val bucketKey = getCurrentContextBucketKey()
+        val newCtxScore = usagePrefs.getInt("${bucketKey}_${app.packageName}", app.contextScore) + 1
+
         usagePrefs.edit()
             .putInt("count_${app.packageName}", newCount)
             .putInt(app.packageName, newCount)
             .putLong("time_${app.packageName}", now)
+            .putInt("${bucketKey}_${app.packageName}", newCtxScore)
             .apply()
 
         val updatedList = cachedApps?.map {
             if (it.packageName == app.packageName && it.activityName == app.activityName) {
-                it.copy(launchCount = newCount, lastLaunchTime = now)
+                it.copy(launchCount = newCount, lastLaunchTime = now, contextScore = newCtxScore)
             } else {
                 it
             }
@@ -169,7 +217,7 @@ class AppRepository(private val context: Context) {
     fun resetUsageHistory(): List<AppInfo> {
         usagePrefs.edit().clear().apply()
         val updated = cachedApps?.map {
-            it.copy(launchCount = 0, lastLaunchTime = 0L, isHidden = false)
+            it.copy(launchCount = 0, lastLaunchTime = 0L, contextScore = 0, isHidden = false)
         }?.sortedWith(usageComparator) ?: emptyList()
         cachedApps = updated
         return updated

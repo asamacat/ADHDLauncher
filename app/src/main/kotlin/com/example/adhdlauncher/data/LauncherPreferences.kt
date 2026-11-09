@@ -45,6 +45,13 @@ enum class DiscoverMode(val label: String, val description: String) {
     OFF("オフ", "ホーム画面の横スワイプフィードを無効化")
 }
 
+enum class IconStyle(val label: String, val description: String) {
+    ORIGINAL("標準アイコン（オリジナル）", "各アプリ本来のカラフルなアイコンを表示"),
+    MATERIAL_SAGE("Material You（セージグリーン）", "全アプリを低刺激なセージグリーン単色アイコンに統一変換"),
+    MATERIAL_CYAN("Material You（シアンブルー）", "全アプリを落ち着いたシアンブルー単色アイコンに統一変換"),
+    MONOCHROME("Material You（モノクローム）", "全アプリを完全な白黒トーンに統一変換して視覚刺激を最小化")
+}
+
 class LauncherPreferences(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("adhd_launcher_prefs", Context.MODE_PRIVATE)
 
@@ -220,6 +227,42 @@ class LauncherPreferences(context: Context) {
     private val _categoryOrder = MutableStateFlow(loadCategoryOrder())
     val categoryOrder: StateFlow<List<AppCategory>> = _categoryOrder.asStateFlow()
 
+    // --- 動的ハニカム（画面タップ展開）& Material You アイコン変換 & ウィジェット・自動ディム ---
+    private val _honeycombEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_HONEYCOMB_ENABLED, true)
+    )
+    val honeycombEnabled: StateFlow<Boolean> = _honeycombEnabled.asStateFlow()
+
+    private val _honeycombAppCount = MutableStateFlow(
+        prefs.getInt(KEY_HONEYCOMB_APP_COUNT, 7).coerceIn(3, 12)
+    )
+    val honeycombAppCount: StateFlow<Int> = _honeycombAppCount.asStateFlow()
+
+    private val _iconStyle = MutableStateFlow(
+        runCatching {
+            IconStyle.valueOf(
+                prefs.getString(KEY_ICON_STYLE, IconStyle.ORIGINAL.name)
+                    ?: IconStyle.ORIGINAL.name
+            )
+        }.getOrDefault(IconStyle.ORIGINAL)
+    )
+    val iconStyle: StateFlow<IconStyle> = _iconStyle.asStateFlow()
+
+    private val _homeWidgetId = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_ID, -1)
+    )
+    val homeWidgetId: StateFlow<Int> = _homeWidgetId.asStateFlow()
+
+    private val _homeWidgetHeightDp = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(80, 420)
+    )
+    val homeWidgetHeightDp: StateFlow<Int> = _homeWidgetHeightDp.asStateFlow()
+
+    private val _idleDimEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
+    )
+    val idleDimEnabled: StateFlow<Boolean> = _idleDimEnabled.asStateFlow()
+
     private fun loadCategoryCustomNames(): Map<AppCategory, String> {
         val map = mutableMapOf<AppCategory, String>()
         for (cat in AppCategory.values()) {
@@ -298,6 +341,38 @@ class LauncherPreferences(context: Context) {
         _categoryCustomNames.value = emptyMap()
         _hiddenCategories.value = emptySet()
         _categoryOrder.value = AppCategory.values().toList()
+    }
+
+    fun setHoneycombEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HONEYCOMB_ENABLED, enabled).apply()
+        _honeycombEnabled.value = enabled
+    }
+
+    fun setHoneycombAppCount(count: Int) {
+        val coerced = count.coerceIn(3, 12)
+        prefs.edit().putInt(KEY_HONEYCOMB_APP_COUNT, coerced).apply()
+        _honeycombAppCount.value = coerced
+    }
+
+    fun setIconStyle(style: IconStyle) {
+        prefs.edit().putString(KEY_ICON_STYLE, style.name).apply()
+        _iconStyle.value = style
+    }
+
+    fun setHomeWidgetId(appWidgetId: Int) {
+        prefs.edit().putInt(KEY_HOME_WIDGET_ID, appWidgetId).apply()
+        _homeWidgetId.value = appWidgetId
+    }
+
+    fun setHomeWidgetHeightDp(heightDp: Int) {
+        val coerced = heightDp.coerceIn(80, 420)
+        prefs.edit().putInt(KEY_HOME_WIDGET_HEIGHT_DP, coerced).apply()
+        _homeWidgetHeightDp.value = coerced
+    }
+
+    fun setIdleDimEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_IDLE_DIM_ENABLED, enabled).apply()
+        _idleDimEnabled.value = enabled
     }
 
     fun updateAnchorText(text: String) {
@@ -478,6 +553,12 @@ class LauncherPreferences(context: Context) {
         _categoryCustomNames.value = emptyMap()
         _hiddenCategories.value = emptySet()
         _categoryOrder.value = AppCategory.values().toList()
+        _honeycombEnabled.value = true
+        _honeycombAppCount.value = 7
+        _iconStyle.value = IconStyle.ORIGINAL
+        _homeWidgetId.value = -1
+        _homeWidgetHeightDp.value = 160
+        _idleDimEnabled.value = true
     }
 
     fun isTrueBlackActive(): Boolean {
@@ -521,5 +602,11 @@ class LauncherPreferences(context: Context) {
         private const val KEY_AI_QUICK_ANSWER = "key_ai_quick_answer"
         private const val KEY_HIDDEN_CATEGORIES = "key_hidden_categories"
         private const val KEY_CATEGORY_ORDER = "key_category_order"
+        private const val KEY_HONEYCOMB_ENABLED = "key_honeycomb_enabled"
+        private const val KEY_HONEYCOMB_APP_COUNT = "key_honeycomb_app_count"
+        private const val KEY_ICON_STYLE = "key_icon_style"
+        private const val KEY_HOME_WIDGET_ID = "key_home_widget_id"
+        private const val KEY_HOME_WIDGET_HEIGHT_DP = "key_home_widget_height_dp"
+        private const val KEY_IDLE_DIM_ENABLED = "key_idle_dim_enabled"
     }
 }

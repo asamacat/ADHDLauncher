@@ -1,5 +1,8 @@
 package com.example.adhdlauncher
 
+import android.app.Activity
+import android.appwidget.AppWidgetHost
+import android.appwidget.AppWidgetManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -9,6 +12,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -33,12 +37,88 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var appRepository: AppRepository
     private lateinit var preferences: LauncherPreferences
+    private lateinit var appWidgetHost: AppWidgetHost
+    private lateinit var appWidgetManager: AppWidgetManager
+
     private var homePressTrigger by mutableIntStateOf(0)
     private var packageChangeTrigger by mutableIntStateOf(0)
+    private var pendingWidgetId: Int = -1
 
     private val packageReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             packageChangeTrigger++
+        }
+    }
+
+    // ウィジェット設定画面（KWGT等の初期設定Activity）からの戻りハンドラ
+    private val widgetConfigureLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val widgetId = pendingWidgetId
+        if (result.resultCode == Activity.RESULT_OK && widgetId != -1) {
+            finalizeWidgetPlacement(widgetId)
+        } else if (widgetId != -1) {
+            appWidgetHost.deleteAppWidgetId(widgetId)
+            pendingWidgetId = -1
+        }
+    }
+
+    // システムのウィジェットピッカーからの戻りハンドラ
+    private val widgetPickLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        val widgetId = data?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, pendingWidgetId) ?: pendingWidgetId
+        if (result.resultCode == Activity.RESULT_OK && widgetId != -1) {
+            val info = appWidgetManager.getAppWidgetInfo(widgetId)
+            if (info?.configure != null) {
+                val configIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                    component = info.configure
+                    putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
+                }
+                try {
+                    widgetConfigureLauncher.launch(configIntent)
+                } catch (_: Exception) {
+                    finalizeWidgetPlacement(widgetId)
+                }
+            } else {
+                finalizeWidgetPlacement(widgetId)
+            }
+        } else if (widgetId != -1) {
+            appWidgetHost.deleteAppWidgetId(widgetId)
+            pendingWidgetId = -1
+        }
+    }
+
+    private fun finalizeWidgetPlacement(widgetId: Int) {
+        val oldId = preferences.homeWidgetId.value
+        if (oldId != -1 && oldId != widgetId) {
+            try {
+                appWidgetHost.deleteAppWidgetId(oldId)
+            } catch (_: Exception) {}
+        }
+        preferences.setHomeWidgetId(widgetId)
+        pendingWidgetId = -1
+    }
+
+    private fun launchWidgetPicker() {
+        try {
+            val allocatedId = appWidgetHost.allocateAppWidgetId()
+            pendingWidgetId = allocatedId
+            val pickIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_PICK).apply {
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, allocatedId)
+            }
+            widgetPickLauncher.launch(pickIntent)
+        } catch (_: Exception) {}
+    }
+
+    private fun removeHomeWidget() {
+        val currentId = preferences.homeWidgetId.value
+        if (currentId != -1) {
+            try {
+                appWidgetHost.deleteAppWidgetId(currentId)
+            } catch (_: Exception) {}
+            preferences.setHomeWidgetId(-1)
         }
     }
 
@@ -47,8 +127,10 @@ class MainActivity : ComponentActivity() {
 
         appRepository = AppRepository(this)
         preferences = LauncherPreferences(this)
+        appWidgetHost = AppWidgetHost(applicationContext, 1024)
+        appWidgetManager = AppWidgetManager.getInstance(applicationContext)
 
-        // 課題1解決: アプリのインストール・アンインストール・更新を自動検知してドロワーへ即時反映
+        // アプリのインストール・アンインストール・更新を自動検知してドロワーへ即時反映
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
             addAction(Intent.ACTION_PACKAGE_REMOVED)
@@ -64,11 +146,29 @@ class MainActivity : ComponentActivity() {
                 LauncherMain(
                     appRepository = appRepository,
                     preferences = preferences,
+                    appWidgetHost = appWidgetHost,
+                    appWidgetManager = appWidgetManager,
                     homePressTrigger = homePressTrigger,
-                    packageChangeTrigger = packageChangeTrigger
+                    packageChangeTrigger = packageChangeTrigger,
+                    onPickWidget = ::launchWidgetPicker,
+                    onRemoveWidget = ::removeHomeWidget
                 )
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        try {
+            appWidgetHost.startListening()
+        } catch (_: Exception) {}
+    }
+
+    override fun onStop() {
+        super.onStop()
+        try {
+            appWidgetHost.stopListening()
+        } catch (_: Exception) {}
     }
 
     override fun onDestroy() {
@@ -90,8 +190,12 @@ class MainActivity : ComponentActivity() {
 fun LauncherMain(
     appRepository: AppRepository,
     preferences: LauncherPreferences,
+    appWidgetHost: AppWidgetHost,
+    appWidgetManager: AppWidgetManager,
     homePressTrigger: Int,
-    packageChangeTrigger: Int
+    packageChangeTrigger: Int,
+    onPickWidget: () -> Unit,
+    onRemoveWidget: () -> Unit
 ) {
     val context = LocalContext.current
     var isDrawerOpen by remember { mutableStateOf(false) }
@@ -102,11 +206,21 @@ fun LauncherMain(
 
     val closeDrawerOnLaunch by preferences.closeDrawerOnLaunch.collectAsState()
     val discoverMode by preferences.discoverMode.collectAsState()
+    val iconStyle by preferences.iconStyle.collectAsState()
+    val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
     val scope = rememberCoroutineScope()
 
-    // 初回起動時およびアプリ追加/削除イベント時にバックグラウンドで一覧を更新
-    LaunchedEffect(packageChangeTrigger) {
-        apps = appRepository.getInstalledApps(forceRefresh = packageChangeTrigger > 0)
+    // 初回起動時・パッケージ変更時・アイコン変換スタイル変更時に一覧を更新
+    LaunchedEffect(packageChangeTrigger, iconStyle) {
+        apps = appRepository.getInstalledApps(
+            forceRefresh = packageChangeTrigger > 0,
+            iconStyle = iconStyle
+        )
+    }
+
+    // 現在の曜日・時間帯の学習スコア + 利用頻度に基づくハニカム候補アプリ
+    val honeycombApps = remember(apps, honeycombAppCount) {
+        appRepository.getContextualTopApps(apps, honeycombAppCount)
     }
 
     // ホームボタン・ホームジェスチャー押下時にドロワーや設定画面を閉じてホームへ戻る
@@ -119,10 +233,16 @@ fun LauncherMain(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // 1. ホーム画面（上スワイプ＝ドロワー、下スワイプ＝クイック検索、右スワイプ＝フィード枠）
+        // 1. ホーム画面（指の座標を中心にしたハニカム展開、ウィジェット、無操作半透明フェード対応）
         if (!isDrawerOpen && !isQuickSearchOpen && !isSettingsOpen) {
             HomeScreen(
                 preferences = preferences,
+                honeycombApps = honeycombApps,
+                appWidgetHost = appWidgetHost,
+                appWidgetManager = appWidgetManager,
+                onAppClick = { app ->
+                    apps = appRepository.launchApp(app)
+                },
                 onOpenDrawer = {
                     isQuickSearchOpen = false
                     isDrawerOpen = true
@@ -198,7 +318,7 @@ fun LauncherMain(
             )
         }
 
-        // 3. 上から下へスワイプ：クイック検索画面（上部検索バー＋よく使うアプリ4つ）
+        // 3. 上から下へスワイプ：クイック検索画面（下部検索バー＋よく使うアプリ4つ）
         AnimatedVisibility(
             visible = isQuickSearchOpen,
             enter = slideInVertically(
@@ -240,6 +360,8 @@ fun LauncherMain(
                 apps = apps,
                 preferences = preferences,
                 initialPage = settingsInitialPage,
+                onPickWidget = onPickWidget,
+                onRemoveWidget = onRemoveWidget,
                 onToggleAppHidden = { app, hidden ->
                     apps = appRepository.setAppHidden(app.packageName, hidden)
                 },
@@ -251,7 +373,10 @@ fun LauncherMain(
                 },
                 onRefreshApps = {
                     scope.launch {
-                        apps = appRepository.getInstalledApps(forceRefresh = true)
+                        apps = appRepository.getInstalledApps(
+                            forceRefresh = true,
+                            iconStyle = iconStyle
+                        )
                     }
                 },
                 onClose = { isSettingsOpen = false }

@@ -67,6 +67,7 @@ import com.example.adhdlauncher.data.DiscoverMode
 import com.example.adhdlauncher.data.DisplayMode
 import com.example.adhdlauncher.data.DrawerSortOrder
 import com.example.adhdlauncher.data.Handedness
+import com.example.adhdlauncher.data.IconStyle
 import com.example.adhdlauncher.data.LauncherPreferences
 import com.example.adhdlauncher.data.SearchProvider
 
@@ -90,6 +91,8 @@ fun SettingsScreen(
     apps: List<AppInfo>,
     preferences: LauncherPreferences,
     initialPage: SettingsPage = SettingsPage.ROOT,
+    onPickWidget: () -> Unit = {},
+    onRemoveWidget: () -> Unit = {},
     onToggleAppHidden: (AppInfo, Boolean) -> Unit,
     onResetUsageHistory: () -> Unit,
     onUnhideAllApps: () -> Unit,
@@ -136,6 +139,8 @@ fun SettingsScreen(
                 )
                 SettingsPage.HOME_PAGE -> HomeSettingsView(
                     preferences = preferences,
+                    onPickWidget = onPickWidget,
+                    onRemoveWidget = onRemoveWidget,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
                 SettingsPage.APPEARANCE -> AppearanceSettingsView(
@@ -216,7 +221,7 @@ private fun RootSettingsView(
                         color = Color.White
                     )
                     Text(
-                        text = "ADHD Launcher v0.2",
+                        text = "ADHD Launcher v0.3",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.45f)
                     )
@@ -314,7 +319,7 @@ private fun RootSettingsView(
         RootMenuItem(
             icon = Icons.Outlined.Palette,
             title = "全体的な外観・省電力",
-            subtitle = "時間帯スケジュール / True Black (#000000)",
+            subtitle = "Material You アイコン変換 / 時間帯スケジュール / True Black",
             onClick = { onNavigate(SettingsPage.APPEARANCE) }
         )
         RootMenuItem(
@@ -346,7 +351,7 @@ private fun RootSettingsView(
         RootMenuItem(
             icon = Icons.Outlined.Home,
             title = "ホーム画面",
-            subtitle = "時計のサイズ・表示位置",
+            subtitle = "タップ展開ハニカム・ウィジェット配置・無操作フェード・時計",
             onClick = { onNavigate(SettingsPage.HOME_PAGE) }
         )
         RootMenuItem(
@@ -502,11 +507,8 @@ private fun DrawerSettingsView(
 
         SubPageNavRow(
             icon = Icons.Default.Palette,
-            title = "アイコンの配置方向（${handedness.label}）",
-            onClick = {
-                val next = if (handedness == Handedness.RIGHT) Handedness.LEFT else Handedness.RIGHT
-                preferences.setHandedness(next)
-            }
+            title = "アイコンの外観・配置方向（${handedness.label} / Material You変換）",
+            onClick = onOpenAppearance
         )
 
         SubPageNavRow(
@@ -1528,9 +1530,16 @@ private fun SearchSettingsView(
 @Composable
 private fun HomeSettingsView(
     preferences: LauncherPreferences,
+    onPickWidget: () -> Unit,
+    onRemoveWidget: () -> Unit,
     onBack: () -> Unit
 ) {
     val clockPosition by preferences.clockPosition.collectAsState()
+    val honeycombEnabled by preferences.honeycombEnabled.collectAsState()
+    val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
+    val homeWidgetId by preferences.homeWidgetId.collectAsState()
+    val homeWidgetHeightDp by preferences.homeWidgetHeightDp.collectAsState()
+    val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
 
     Column(
         modifier = Modifier
@@ -1540,12 +1549,230 @@ private fun HomeSettingsView(
     ) {
         SubPageHeader(title = "ホーム画面", onBack = onBack)
 
+        // 1. 画面タップ時の動的ハニカムショートカット
         Text(
-            text = "時計の表示位置",
+            text = "動的ハニカムショートカット（画面タップ展開）",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White.copy(alpha = 0.55f),
-            modifier = Modifier.padding(vertical = 10.dp)
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        CleanSwitchRow(
+            title = "タップした指の座標を中心にハニカム展開",
+            subtitle = "空白領域をタップした位置を中心に、現在の曜日・時間帯によく使うアプリを六角形（ハニカム）状に展開します",
+            checked = honeycombEnabled,
+            onCheckedChange = { preferences.setHoneycombEnabled(it) }
+        )
+
+        if (honeycombEnabled) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "ハニカムの展開アプリ数",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "中央1個 ＋ 周囲リング（最大12個、推奨7個）",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.55f)
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1C1D22),
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { preferences.setHoneycombAppCount(honeycombAppCount - 1) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Remove,
+                                contentDescription = "減らす",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = honeycombAppCount.toString(),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1C1D22),
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { preferences.setHoneycombAppCount(honeycombAppCount + 1) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = "増やす",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        // 2. ウィジェット配置（KWGT / 時計 / カレンダー等）
+        Text(
+            text = "ホーム画面ウィジェット（KWGT・時計・予定等）",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        Text(
+            text = if (homeWidgetId != -1) {
+                "現在ウィジェットが配置されています（ID: $homeWidgetId）"
+            } else {
+                "KWGT や Google At a Glance、カレンダー等のウィジェットを1つホーム画面に配置できます。"
+            },
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.65f),
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = onPickWidget,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentSage,
+                    contentColor = Color(0xFF14161B)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = if (homeWidgetId == -1) "ウィジェットを選択" else "ウィジェットを変更",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (homeWidgetId != -1) {
+                OutlinedButton(
+                    onClick = onRemoveWidget,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(0.7f)
+                ) {
+                    Text("削除", color = Color(0xFFEF9A9A))
+                }
+            }
+        }
+
+        if (homeWidgetId != -1) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "ウィジェットの高さ (${homeWidgetHeightDp}dp)",
+                    fontSize = 14.sp,
+                    color = Color.White
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1C1D22),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp - 20) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Remove, contentDescription = "低くする", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF1C1D22),
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp + 20) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "高くする", tint = Color.White, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        // 3. 無操作時の半透明化（Idle Dimming）
+        Text(
+            text = "視覚ノイズ低減・省電力",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        CleanSwitchRow(
+            title = "無操作時にウィジェットや時計を半透明にする",
+            subtitle = "ホーム画面で5秒間操作がない場合、UIとウィジェットを半透明（24%）にフェードさせ、タッチで即座に戻します",
+            checked = idleDimEnabled,
+            onCheckedChange = { preferences.setIdleDimEnabled(it) }
+        )
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        // 4. 時計の表示位置
+        Text(
+            text = "内蔵時計の表示位置",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
         )
 
         ClockPosition.values().forEach { pos ->
@@ -1556,6 +1783,8 @@ private fun HomeSettingsView(
                 onClick = { preferences.setClockPosition(pos) }
             )
         }
+
+        Spacer(modifier = Modifier.height(36.dp))
     }
 }
 
@@ -1565,6 +1794,7 @@ private fun AppearanceSettingsView(
     onBack: () -> Unit
 ) {
     val displayMode by preferences.displayMode.collectAsState()
+    val iconStyle by preferences.iconStyle.collectAsState()
 
     Column(
         modifier = Modifier
@@ -1575,10 +1805,32 @@ private fun AppearanceSettingsView(
         SubPageHeader(title = "全体的な外観・省電力", onBack = onBack)
 
         Text(
+            text = "アプリアイコンの変換スタイル（Material You / モノクロ）",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 10.dp)
+        )
+
+        IconStyle.values().forEach { style ->
+            CleanRadioRow(
+                title = style.label,
+                subtitle = style.description,
+                selected = (iconStyle == style),
+                onClick = { preferences.setIconStyle(style) }
+            )
+        }
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        Text(
             text = "背景・OLED省電力モード",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.White.copy(alpha = 0.55f),
+            color = AccentCyan,
             modifier = Modifier.padding(vertical = 10.dp)
         )
 
@@ -1590,6 +1842,8 @@ private fun AppearanceSettingsView(
                 onClick = { preferences.setDisplayMode(mode) }
             )
         }
+
+        Spacer(modifier = Modifier.height(36.dp))
     }
 }
 

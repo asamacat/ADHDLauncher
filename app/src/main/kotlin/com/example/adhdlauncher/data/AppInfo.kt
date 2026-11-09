@@ -23,5 +23,6 @@ data class AppInfo(
     val launchCount: Int = 0,
     val lastLaunchTime: Long = 0L,
     val systemUsageScore: Long = 0L,
+    val contextScore: Int = 0,
     val isHidden: Boolean = false
 )
