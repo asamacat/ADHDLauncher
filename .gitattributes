@@ -1,0 +1,24 @@
+# Reference: https://git-scm.com/docs/gitattributes
+# Ensure Gradle wrapper shell script always has LF line endings for Linux/macOS CI runners
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows batch scripts
+*.bat text eol=crlf
+
+# Source & Config files
+*.kt text eol=lf
+*.kts text eol=lf
+*.xml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.properties text eol=lf
+
+# Binary assets
+*.png binary
+*.webp binary
+*.jpg binary
+*.jar binary
+*.apk binary

@@ -1,0 +1,57 @@
+name: Android CI & Dictionary Validation
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    name: Validate JSON Dictionary & Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate app_dictionary.json schema
+        run: |
+          python3 -c '
+          import json, sys
+          path = "app/src/main/assets/dictionaries/app_dictionary.json"
+          with open(path, "r", encoding="utf-8") as f:
+              data = json.load(f)
+          valid_cats = {"COMMUNICATION", "FINANCE", "INTERNET", "MEDIA", "GAMES", "TOOLS"}
+          for section in ("package_rules", "category_keywords"):
+              assert section in data, f"Missing {section}"
+              for cat, items in data[section].items():
+                  assert cat in valid_cats, f"Invalid category {cat} in {section}"
+                  assert isinstance(items, list), f"{cat} in {section} must be a list"
+          assert "search_aliases" in data and isinstance(data["search_aliases"], dict), "Missing search_aliases"
+          print("Dictionary JSON validation passed successfully!")
+          '
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK & Run Lint
+        run: ./gradlew assembleDebug lintDebug
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADHDLauncher-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk

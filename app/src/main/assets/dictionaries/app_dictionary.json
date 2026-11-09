@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "description": "Community-contributed app categorization and search keyword dictionary for ADHD Launcher. Contributors can add localized keywords, aliases, and regional package names via Pull Request.",
+  "package_rules": {
+    "COMMUNICATION": [
+      "jp.naver.line.android",
+      "com.twitter.android",
+      "com.instagram.android",
+      "com.facebook.katana",
+      "com.discord",
+      "com.Slack",
+      "com.microsoft.teams",
+      "com.google.android.talk",
+      "com.google.android.apps.messaging",
+      "com.samsung.android.messaging",
+      "com.android.mms",
+      "com.google.android.dialer",
+      "com.android.dialer",
+      "com.google.android.gm",
+      "com.google.android.contacts",
+      "com.android.contacts"
+    ],
+    "FINANCE": [
+      "jp.ne.paypay.android.app",
+      "jp.co.rakuten.pay.android",
+      "jp.co.rakuten.bank",
+      "com.mercariapp.mercari",
+      "com.mobilesuica.msb.android",
+      "com.pasmo.android.app",
+      "jp.co.jreast.app",
+      "jp.id_credit.spapp",
+      "com.dpoint.app",
+      "com.nttdocomo.android.dpay",
+      "com.amazon.mShop.android.shopping",
+      "jp.co.rakuten.android",
+      "com.yahoo.android.yshopping",
+      "com.alibaba.aliexpresshd",
+      "jp.co.aeon.aeonpay",
+      "jp.co.aeonbank.passbook",
+      "jp.co.ohsho.app",
+      "jp.co.monogatari.yakinikuking",
+      "jp.co.baskinrobbins.app",
+      "jp.co.hankyu_dept.app",
+      "com.ana.android.amc"
+    ],
+    "INTERNET": [
+      "com.android.chrome",
+      "org.mozilla.firefox",
+      "com.microsoft.emmx",
+      "jp.co.yahoo.android.yjtop",
+      "jp.gocro.smartnews.android",
+      "jp.gunosy.android",
+      "com.google.android.googlequicksearchbox",
+      "com.google.android.apps.bard",
+      "com.openai.chatgpt",
+      "com.anthropic.claude"
+    ],
+    "MEDIA": [
+      "com.google.android.youtube",
+      "com.spotify.music",
+      "com.netflix.mediaclient",
+      "jp.co.nhk.nhkplus",
+      "com.google.android.apps.photos",
+      "com.amazon.clouddrive.photos",
+      "com.amazon.mp3",
+      "com.apple.android.music",
+      "jp.radiko.Player",
+      "com.amazon.avod.thirdpartyclient",
+      "com.google.android.apps.youtube.music"
+    ],
+    "TOOLS": [
+      "com.android.settings",
+      "com.google.android.deskclock",
+      "com.android.deskclock",
+      "com.google.android.calculator",
+      "com.android.calculator2",
+      "com.google.android.apps.nbu.files",
+      "com.android.documentsui",
+      "com.google.android.apps.maps",
+      "com.android.vending",
+      "com.google.android.apps.translate",
+      "com.google.android.apps.authenticator2"
+    ]
+  },
+  "category_keywords": {
+    "FINANCE": [
+      "pay", "wallet", "suica", "bank", "shop", "aliexpress", "coupon", "point", "card",
+      "ペイ", "銀行", "通帳", "ポイント", "王将", "きんぐ", "百貨店", "市場", "ショッピング", "club", "カード", "ana", "jal"
+    ],
+    "COMMUNICATION": [
+      "mail", "message", "chat", "dialer", "contact", "teams", "whatsapp", "telegram", "signal",
+      "電話", "連絡先", "通話", "メール", "line"
+    ],
+    "INTERNET": [
+      "browser", "news", "hatena", "satena", "gemini", "ai", "reddit",
+      "ブラウザ", "ニュース", "検索"
+    ],
+    "MEDIA": [
+      "camera", "gallery", "photo", "music", "video", "player", "podcast",
+      "カメラ", "写真", "音楽", "動画", "ボイス"
+    ],
+    "TOOLS": [
+      "clock", "calc", "file", "setting", "tool", "auth", "calendar", "note",
+      "設定", "電卓", "翻訳", "認証", "文字変換", "時計", "メモ", "カレンダー"
+    ]
+  },
+  "search_aliases": {
+    "餃子": "ぎょうざ gyoza ohsho",
+    "王将": "おうしょう ohsho gyoza",
+    "焼肉": "やきにく yakiniku king",
+    "きんぐ": "yakiniku king",
+    "楽天": "らくてん rakuten",
+    "銀行": "ぎんこう ginko bank",
+    "通帳": "つうちょう tsucho passbook",
+    "百貨店": "ひゃっかてん hyakkaten hankyu",
+    "阪急": "はんきゅう hankyu",
+    "阪神": "はんしん hanshin",
+    "電話": "でんわ denwa phone call",
+    "通話": "つうわ tsuwa call",
+    "連絡先": "れんらくさき renrakusaki contacts",
+    "設定": "せってい settei settings",
+    "電卓": "でんたく dentaku calc",
+    "翻訳": "ほんやく honyaku translate",
+    "認証": "にんしょう ninsho auth",
+    "音声": "おんせい onsei voice",
+    "文字変換": "もじへんかん mojihenkan",
+    "時計": "とけい tokei clock",
+    "写真": "しゃしん shashin photo",
+    "カメラ": "かめら camera",
+    "地図": "ちず chizu map"
+  }
+}

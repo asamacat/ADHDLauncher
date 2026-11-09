@@ -1,0 +1,23 @@
+name: Dictionary / Localization Addition
+description: Add regional apps, localized category keywords, or phonetic search aliases to app_dictionary.json
+title: "[Dictionary] Add apps/keywords for <Country/Language>"
+labels: ["dictionary", "localization", "good first issue"]
+body:
+  - type: input
+    id: locale
+    attributes:
+      label: Target Language / Region
+      description: Which language or country are these apps/keywords for?
+      placeholder: "e.g., English (US), Korean (KR), German (DE), Japanese (JP)"
+    validations:
+      required: true
+  - type: textarea
+    id: additions
+    attributes:
+      label: Package Names or Keywords to Add
+      description: List the Android package names (`applicationId`), category (`COMMUNICATION`, `FINANCE`, `INTERNET`, `MEDIA`, `GAMES`, `TOOLS`), or search aliases.
+      placeholder: |
+        - `com.kakao.talk` -> `COMMUNICATION`
+        - `com.toss.im` -> `FINANCE`
+    validations:
+      required: true

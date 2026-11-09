@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- The Centering Arc (Variant 2): Outer sweeping dark charcoal arc -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 52,80 A 26,26 0 1 1 79.5,49"
+        android:strokeWidth="6.2"
+        android:strokeColor="#3A4138"
+        android:strokeLineCap="round" />
+
+    <!-- Center solid anchor circle -->
+    <path
+        android:fillColor="#3A4138"
+        android:pathData="M 54,54 m -8.5,0 a 8.5,8.5 0 1,0 17,0 a 8.5,8.5 0 1,0 -17,0" />
+
+    <!-- Bottom-right cream pill (thumb swipe / focus indicator) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M 65.5,71.5 L 72.5,64.5"
+        android:strokeWidth="7.4"
+        android:strokeColor="#EFE8CE"
+        android:strokeLineCap="round" />
+</vector>

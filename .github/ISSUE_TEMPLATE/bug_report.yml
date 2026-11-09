@@ -1,0 +1,19 @@
+name: Bug Report
+description: Report a bug, crash, or ergonomic issue in ADHD Launcher
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: device
+    attributes:
+      label: Device & Android Version
+      placeholder: "e.g., Pixel 9, Android 16 (API 36)"
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the issue and steps to reproduce it.
+    validations:
+      required: true
