@@ -20,7 +20,8 @@ enum class Handedness(val label: String, val description: String) {
 
 enum class ClockPosition(val label: String, val description: String) {
     TOP_LARGE("画面上部に大きく表示（標準）", "視認性に優れた大型ミニマル時計"),
-    BOTTOM_COMPACT("画面下部に寄せて表示", "目線や親指の近くに時間と日付を配置")
+    BOTTOM_COMPACT("画面下部に寄せて表示", "目線や親指の近くに時間と日付を配置"),
+    HIDDEN("非表示（ウィジェット優先）", "内蔵時計を隠し、KWGT等の外部ウィジェットのみを表示")
 }
 
 enum class DrawerSortOrder(val label: String) {
@@ -45,11 +46,54 @@ enum class DiscoverMode(val label: String, val description: String) {
     OFF("オフ", "ホーム画面の横スワイプフィードを無効化")
 }
 
-enum class IconStyle(val label: String, val description: String) {
-    ORIGINAL("標準アイコン（オリジナル）", "各アプリ本来のカラフルなアイコンを表示"),
-    MATERIAL_SAGE("Material You（セージグリーン）", "全アプリを低刺激なセージグリーン単色アイコンに統一変換"),
-    MATERIAL_CYAN("Material You（シアンブルー）", "全アプリを落ち着いたシアンブルー単色アイコンに統一変換"),
-    MONOCHROME("Material You（モノクローム）", "全アプリを完全な白黒トーンに統一変換して視覚刺激を最小化")
+enum class IconStyle(
+    val label: String,
+    val description: String,
+    val bgHex: Int,
+    val fgHex: Int
+) {
+    MONOCHROME(
+        "Material You（モノクローム・標準）",
+        "全アプリを完全な白黒・グレー単色に統一して視覚刺激を最小化",
+        0x1E1F22,
+        0xE2E4E8
+    ),
+    MATERIAL_SAGE(
+        "Material You（セージグリーン）",
+        "全アプリを落ち着いたセージグリーン単色アイコンに統一変換",
+        0x232B22,
+        0xB8CCAE
+    ),
+    MATERIAL_CYAN(
+        "Material You（シアンブルー）",
+        "全アプリを知的なシアンブルー単色アイコンに統一変換",
+        0x182430,
+        0x90CAF9
+    ),
+    MATERIAL_LAVENDER(
+        "Material You（ラベンダー）",
+        "全アプリを穏やかなラベンダーパープル単色アイコンに統一変換",
+        0x252030,
+        0xCEB8F5
+    ),
+    MATERIAL_AMBER(
+        "Material You（ウォームアンバー）",
+        "全アプリを夜間でも目に優しい暖色アンバー単色アイコンに統一変換",
+        0x2E2418,
+        0xF5CBA7
+    ),
+    MATERIAL_ROSE(
+        "Material You（ダスティローズ）",
+        "全アプリを彩度を抑えたスモーキーローズ単色アイコンに統一変換",
+        0x2E1E22,
+        0xF2B8C6
+    ),
+    ORIGINAL(
+        "オリジナル（無変換）",
+        "各アプリ本来のカラフルなアイコンをそのまま表示",
+        0x000000,
+        0xFFFFFF
+    )
 }
 
 class LauncherPreferences(context: Context) {
@@ -241,10 +285,10 @@ class LauncherPreferences(context: Context) {
     private val _iconStyle = MutableStateFlow(
         runCatching {
             IconStyle.valueOf(
-                prefs.getString(KEY_ICON_STYLE, IconStyle.ORIGINAL.name)
-                    ?: IconStyle.ORIGINAL.name
+                prefs.getString(KEY_ICON_STYLE, IconStyle.MONOCHROME.name)
+                    ?: IconStyle.MONOCHROME.name
             )
-        }.getOrDefault(IconStyle.ORIGINAL)
+        }.getOrDefault(IconStyle.MONOCHROME)
     )
     val iconStyle: StateFlow<IconStyle> = _iconStyle.asStateFlow()
 
@@ -555,7 +599,7 @@ class LauncherPreferences(context: Context) {
         _categoryOrder.value = AppCategory.values().toList()
         _honeycombEnabled.value = true
         _honeycombAppCount.value = 7
-        _iconStyle.value = IconStyle.ORIGINAL
+        _iconStyle.value = IconStyle.MONOCHROME
         _homeWidgetId.value = -1
         _homeWidgetHeightDp.value = 160
         _idleDimEnabled.value = true

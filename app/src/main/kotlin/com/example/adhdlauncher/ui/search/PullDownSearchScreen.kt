@@ -47,6 +47,7 @@ import com.example.adhdlauncher.data.AppInfo
 import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.JapaneseSearchMatcher
 import com.example.adhdlauncher.data.LauncherPreferences
+import com.example.adhdlauncher.ui.util.HexagonShape
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -294,7 +295,11 @@ fun PullDownSearchScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = if (query.isBlank()) "すべてのアプリ" else "一致するアプリ (${displayedApps.size})",
+                    text = when {
+                        query.isNotBlank() -> "一致するアプリ (${displayedApps.size})"
+                        showAllAppsInSearch -> "すべてのアプリ (${displayedApps.size})"
+                        else -> "よく使うアプリ"
+                    },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White.copy(alpha = 0.5f)
@@ -465,13 +470,13 @@ private fun SearchAppTile(
                 contentDescription = app.label,
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(HexagonShape)
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(56.dp)
-                    .clip(CircleShape)
+                    .clip(HexagonShape)
                     .background(Color.White.copy(alpha = 0.18f)),
                 contentAlignment = Alignment.Center
             ) {

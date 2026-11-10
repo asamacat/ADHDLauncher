@@ -26,13 +26,37 @@ class AppRepository(private val context: Context) {
      * 現在時刻のコンテキストバケットキー（時間帯 0..5 × 平日/休日）
      * ADHDユーザーの生活リズム（朝・昼・夕方・夜 × 平日・週末）に合わせて文脈スコアを記録・抽出する
      */
+    private fun getContextBucketKey(hourBucket: Int, isWeekend: Boolean): String {
+        val dayType = if (isWeekend) "wknd" else "wkdy"
+        return "ctx_${dayType}_h${(hourBucket + 6) % 6}"
+    }
+
     private fun getCurrentContextBucketKey(): String {
         val cal = Calendar.getInstance()
         val hourBucket = cal.get(Calendar.HOUR_OF_DAY) / 4 // 0..5 (4時間単位)
         val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
         val isWeekend = (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)
-        val dayType = if (isWeekend) "wknd" else "wkdy"
-        return "ctx_${dayType}_h${hourBucket}"
+        return getContextBucketKey(hourBucket, isWeekend)
+    }
+
+    /**
+     * 時間帯の境界（例: 7:55 と 8:05）でスコアが急激に途切れないよう、
+     * 現在バケット(×3) ＋ 前後バケット(×1) の平滑化コンテキストスコアを算出する
+     */
+    private fun computeSmoothedContextScore(packageName: String): Int {
+        val cal = Calendar.getInstance()
+        val hourBucket = cal.get(Calendar.HOUR_OF_DAY) / 4
+        val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+        val isWeekend = (dayOfWeek == Calendar.SATURDAY || dayOfWeek == Calendar.SUNDAY)
+
+        val currentKey = getContextBucketKey(hourBucket, isWeekend)
+        val prevKey = getContextBucketKey(hourBucket - 1, isWeekend)
+        val nextKey = getContextBucketKey(hourBucket + 1, isWeekend)
+
+        val cur = usagePrefs.getInt("${currentKey}_$packageName", 0)
+        val prev = usagePrefs.getInt("${prevKey}_$packageName", 0)
+        val next = usagePrefs.getInt("${nextKey}_$packageName", 0)
+        return cur * 3 + prev + next
     }
 
     private fun querySystemUsageScores(): Map<String, Long> {
@@ -54,7 +78,7 @@ class AppRepository(private val context: Context) {
 
     suspend fun getInstalledApps(
         forceRefresh: Boolean = false,
-        iconStyle: IconStyle = IconStyle.ORIGINAL
+        iconStyle: IconStyle = IconStyle.MONOCHROME
     ): List<AppInfo> = withContext(Dispatchers.Default) {
         if (!forceRefresh && cachedApps != null && cachedIconStyle == iconStyle) {
             return@withContext cachedApps!!
@@ -69,7 +93,6 @@ class AppRepository(private val context: Context) {
         val resolveInfos = packageManager.queryIntentActivities(mainIntent, 0)
         val myPackageName = context.packageName
         val systemUsageMap = querySystemUsageScores()
-        val bucketKey = getCurrentContextBucketKey()
 
         val apps = resolveInfos
             .filter { it.activityInfo.packageName != myPackageName }
@@ -91,7 +114,7 @@ class AppRepository(private val context: Context) {
                 val isHidden = usagePrefs.getBoolean("hidden_$pkg", false)
                 val count = usagePrefs.getInt("count_$pkg", usagePrefs.getInt(pkg, 0))
                 val lastTime = usagePrefs.getLong("time_$pkg", 0L)
-                val ctxScore = usagePrefs.getInt("${bucketKey}_$pkg", 0)
+                val ctxScore = computeSmoothedContextScore(pkg)
                 val sysScore = systemUsageMap[pkg] ?: 0L
 
                 AppInfo(
@@ -115,19 +138,18 @@ class AppRepository(private val context: Context) {
     }
 
     /**
-     * 画面タップ時のハニカムショートカット用：
-     * 現在の曜日・時間帯の起動回数（contextScore）を最優先し、全体の起動回数・直近起動時刻・システム使用統計を組み合わせて上位N件を返す
+     * 画面タップ時のハニカム扇形ショートカット用：
+     * 現在の曜日・時間帯の平滑化コンテキストスコア（contextScore）を最優先し、全体の起動回数・直近起動時刻・システム使用統計を組み合わせて上位N件を返す
      */
     fun getContextualTopApps(apps: List<AppInfo>, count: Int): List<AppInfo> {
-        val bucketKey = getCurrentContextBucketKey()
         return apps
             .filter { !it.isHidden }
             .map { app ->
-                val freshCtx = usagePrefs.getInt("${bucketKey}_${app.packageName}", app.contextScore)
+                val freshCtx = computeSmoothedContextScore(app.packageName)
                 if (freshCtx != app.contextScore) app.copy(contextScore = freshCtx) else app
             }
             .sortedWith(
-                compareByDescending<AppInfo> { it.contextScore * 3 + it.launchCount }
+                compareByDescending<AppInfo> { it.contextScore * 2 + it.launchCount }
                     .thenByDescending { it.contextScore }
                     .thenByDescending { it.lastLaunchTime }
                     .thenByDescending { it.systemUsageScore }

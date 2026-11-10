@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -70,6 +71,7 @@ import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.IconStyle
 import com.example.adhdlauncher.data.LauncherPreferences
 import com.example.adhdlauncher.data.SearchProvider
+import com.example.adhdlauncher.ui.util.HexagonShape
 
 enum class SettingsPage {
     ROOT,
@@ -221,7 +223,7 @@ private fun RootSettingsView(
                         color = Color.White
                     )
                     Text(
-                        text = "ADHD Launcher v0.3",
+                        text = "ADHD Launcher v0.3.1",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.45f)
                     )
@@ -1551,7 +1553,7 @@ private fun HomeSettingsView(
 
         // 1. 画面タップ時の動的ハニカムショートカット
         Text(
-            text = "動的ハニカムショートカット（画面タップ展開）",
+            text = "動的ハニカムショートカット（扇形展開）",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
@@ -1559,8 +1561,8 @@ private fun HomeSettingsView(
         )
 
         CleanSwitchRow(
-            title = "タップした指の座標を中心にハニカム展開",
-            subtitle = "空白領域をタップした位置を中心に、現在の曜日・時間帯によく使うアプリを六角形（ハニカム）状に展開します",
+            title = "タップした指の座標から扇形にハニカム展開",
+            subtitle = "空白領域をタップした位置を起点（扇の要）として、現在の曜日・時間帯によく使うアプリを六角形（ハニカム）の扇形アーク状に展開します",
             checked = honeycombEnabled,
             onCheckedChange = { preferences.setHoneycombEnabled(it) }
         )
@@ -1575,13 +1577,13 @@ private fun HomeSettingsView(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "ハニカムの展開アプリ数",
+                        text = "ハニカム扇形の展開アプリ数",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.White
                     )
                     Text(
-                        text = "中央1個 ＋ 周囲リング（最大12個、推奨7個）",
+                        text = "内側アーク最大5個 ＋ 外側アーク（最大12個、推奨7個）",
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.55f)
                     )
@@ -1805,12 +1807,47 @@ private fun AppearanceSettingsView(
         SubPageHeader(title = "全体的な外観・省電力", onBack = onBack)
 
         Text(
-            text = "アプリアイコンの変換スタイル（Material You / モノクロ）",
+            text = "アプリアイコンのカラー変換（Material You・標準モノクロ）",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
             modifier = Modifier.padding(vertical = 10.dp)
         )
+
+        // 六角形カラースウォッチバー（ワンタップで色を切り替え可能）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconStyle.values().forEach { style ->
+                val isSelected = (iconStyle == style)
+                val bgColor = if (style == IconStyle.ORIGINAL) Color(0xFF2B2D35) else Color((0xFF000000L) or style.bgHex.toLong())
+                val fgColor = if (style == IconStyle.ORIGINAL) AccentCyan else Color((0xFF000000L) or style.fgHex.toLong())
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(HexagonShape)
+                        .background(bgColor)
+                        .border(
+                            width = if (isSelected) 2.5.dp else 1.dp,
+                            color = if (isSelected) Color.White else fgColor.copy(alpha = 0.45f),
+                            shape = HexagonShape
+                        )
+                        .clickable { preferences.setIconStyle(style) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clip(HexagonShape)
+                            .background(fgColor)
+                    )
+                }
+            }
+        }
 
         IconStyle.values().forEach { style ->
             CleanRadioRow(

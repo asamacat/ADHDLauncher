@@ -65,6 +65,7 @@ import com.example.adhdlauncher.data.DiscoverMode
 import com.example.adhdlauncher.data.DisplayMode
 import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.LauncherPreferences
+import com.example.adhdlauncher.ui.util.HexagonShape
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
@@ -469,37 +470,27 @@ fun HomeScreen(
             }
         }
 
-        // 4. タップ座標を中心とした動的ハニカムショートカットポップアップ
+        // 4. タップした指の座標を起点とした「扇形ハニカム（Fan Arc Honeycomb）」ポップアップ
         val activeCenter = honeycombCenter
         AnimatedVisibility(
             visible = activeCenter != null && honeycombApps.isNotEmpty(),
-            enter = fadeIn(animationSpec = tween(110)) + scaleIn(
-                initialScale = 0.78f,
-                animationSpec = tween(130, easing = FastOutSlowInEasing)
+            enter = fadeIn(animationSpec = tween(100)) + scaleIn(
+                initialScale = 0.80f,
+                animationSpec = tween(120, easing = FastOutSlowInEasing)
             ),
-            exit = fadeOut(animationSpec = tween(90)) + scaleOut(
-                targetScale = 0.85f,
-                animationSpec = tween(90)
+            exit = fadeOut(animationSpec = tween(80)) + scaleOut(
+                targetScale = 0.88f,
+                animationSpec = tween(80)
             )
         ) {
-            if (activeCenter != null) {
+            if (activeCenter != null && boxSize.width > 0 && boxSize.height > 0) {
                 val displayApps = honeycombApps.take(honeycombAppCount.coerceIn(3, 12))
-                val hasOuterRing = displayApps.size > 7
-                val safeMarginPx = with(density) { (if (hasOuterRing) 158.dp else 108.dp).toPx() }
-                val clampedX = if (boxSize.width > safeMarginPx * 2) {
-                    activeCenter.x.coerceIn(safeMarginPx, boxSize.width - safeMarginPx)
-                } else {
-                    (boxSize.width / 2f).coerceAtLeast(activeCenter.x)
-                }
-                val clampedY = if (boxSize.height > safeMarginPx * 2) {
-                    activeCenter.y.coerceIn(safeMarginPx, boxSize.height - safeMarginPx)
-                } else {
-                    (boxSize.height / 2f).coerceAtLeast(activeCenter.y)
-                }
-
-                HoneycombPopupOverlay(
-                    centerX = clampedX,
-                    centerY = clampedY,
+                FanHoneycombPopupOverlay(
+                    tapX = activeCenter.x,
+                    tapY = activeCenter.y,
+                    screenWidth = boxSize.width.toFloat(),
+                    screenHeight = boxSize.height.toFloat(),
+                    handedness = handedness,
                     apps = displayApps,
                     onSelectApp = { selected ->
                         honeycombCenter = null
@@ -512,21 +503,44 @@ fun HomeScreen(
     }
 }
 
+/**
+ * タップした指の座標を要（ピボット）として、画面内側へ向かって扇形（Fan Arc）に六角形アイコンを展開するオーバーレイ
+ */
 @Composable
-private fun HoneycombPopupOverlay(
-    centerX: Float,
-    centerY: Float,
+private fun FanHoneycombPopupOverlay(
+    tapX: Float,
+    tapY: Float,
+    screenWidth: Float,
+    screenHeight: Float,
+    handedness: Handedness,
     apps: List<AppInfo>,
     onSelectApp: (AppInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
     val density = LocalDensity.current
-    val nodeSizeDp = 64.dp
+    val nodeSizeDp = 66.dp
     val nodeHalfPx = with(density) { (nodeSizeDp / 2).toPx() }
-    val ring1RadiusPx = with(density) { 74.dp.toPx() }
-    val ring2RadiusPx = with(density) { 134.dp.toPx() }
-    val backdropRadiusDp = if (apps.size > 7) 168.dp else 112.dp
-    val backdropRadiusPx = with(density) { backdropRadiusDp.toPx() }
+    val arc1RadiusPx = with(density) { 108.dp.toPx() }
+    val arc2RadiusPx = with(density) { 184.dp.toPx() }
+
+    // 画面端マージン
+    val edgePaddingPx = nodeHalfPx + with(density) { 10.dp.toPx() }
+
+    // タップした座標が画面の右側・左側・中央のどこにあるかで、扇が開く中心角度（度）を自動決定
+    val openUpward = tapY > screenHeight * 0.35f
+    val centerAngleDeg = when {
+        tapX > screenWidth * 0.62f -> if (openUpward) -135.0 else 135.0 // 右側タップ → 左上（または左下）へ扇形展開
+        tapX < screenWidth * 0.38f -> if (openUpward) -45.0 else 45.0   // 左側タップ → 右上（または右下）へ扇形展開
+        else -> if (openUpward) -90.0 else 90.0                         // 中央タップ → 真上（または真下）へ扇形展開
+    }
+
+    // タップ起点の六角形ピボットマーカー座標（画面端から飛び出ないようクランプ）
+    val pivotX = tapX.coerceIn(edgePaddingPx, (screenWidth - edgePaddingPx).coerceAtLeast(edgePaddingPx))
+    val pivotY = tapY.coerceIn(edgePaddingPx, (screenHeight - edgePaddingPx).coerceAtLeast(edgePaddingPx))
+
+    // 内側アーク（最大4個）と外側アーク（5個目以降、最大8個）に分割して重ならない扇形ハニカム配置
+    val innerCount = apps.size.coerceAtMost(4)
+    val outerCount = (apps.size - innerCount).coerceAtLeast(0)
 
     Box(
         modifier = Modifier
@@ -537,61 +551,70 @@ private fun HoneycombPopupOverlay(
                 onClick = onDismiss
             )
     ) {
-        // 半透明の円形バックドロップ（指の座標を中心に展開）
+        // タップした指の座標を示す六角形アンカーリング（扇の要）
+        val pivotMarkerSize = 28.dp
+        val pivotMarkerHalfPx = with(density) { (pivotMarkerSize / 2).toPx() }
         Box(
             modifier = Modifier
                 .offset {
                     IntOffset(
-                        x = (centerX - backdropRadiusPx).roundToInt(),
-                        y = (centerY - backdropRadiusPx).roundToInt()
+                        x = (pivotX - pivotMarkerHalfPx).roundToInt(),
+                        y = (pivotY - pivotMarkerHalfPx).roundToInt()
                     )
                 }
-                .size(backdropRadiusDp * 2)
-                .clip(CircleShape)
-                .background(Color(0xD9101411))
-                .border(1.dp, Color(0xFF94A88B).copy(alpha = 0.35f), CircleShape)
+                .size(pivotMarkerSize)
+                .clip(HexagonShape)
+                .background(Color(0xFF94A88B).copy(alpha = 0.28f))
+                .border(1.5.dp, Color(0xFF94A88B).copy(alpha = 0.85f), HexagonShape)
         )
 
         apps.forEachIndexed { index, app ->
-            val (dx, dy) = when {
-                index == 0 -> 0f to 0f
-                index in 1..6 -> {
-                    val countInRing1 = (apps.size - 1).coerceAtMost(6)
-                    val stepDeg = 360.0 / countInRing1.coerceAtLeast(1)
-                    val angleRad = Math.toRadians((index - 1) * stepDeg - 90.0)
-                    (ring1RadiusPx * cos(angleRad)).toFloat() to (ring1RadiusPx * sin(angleRad)).toFloat()
-                }
-                else -> {
-                    val outerCount = (apps.size - 7).coerceAtLeast(1)
-                    val outerIdx = index - 7
-                    val stepDeg = 360.0 / outerCount
-                    // 内側リングの間（+30度オフセット）にハニカム配置
-                    val angleRad = Math.toRadians(outerIdx * stepDeg - 60.0)
-                    (ring2RadiusPx * cos(angleRad)).toFloat() to (ring2RadiusPx * sin(angleRad)).toFloat()
-                }
-            }
+            val isInner = index < innerCount
+            val countInArc = if (isInner) innerCount else outerCount
+            val idxInArc = if (isInner) index else (index - innerCount)
+            val radiusPx = if (isInner) arc1RadiusPx else arc2RadiusPx
 
-            val isCenterNode = index == 0
+            // 扇の広がり角（1列目: 1個あたり38度、2列目: 1個あたり28度で一切重ならない間隔）
+            val stepDeg = if (isInner) 38.0 else 28.0
+            val totalSpanDeg = (countInArc - 1).coerceAtLeast(0) * stepDeg
+            val startDeg = centerAngleDeg - totalSpanDeg / 2.0
+
+            // 右利きなら親指に近い側（右端・下端側）から1位が並ぶように配置
+            val orderedIdx = if (handedness == Handedness.RIGHT) {
+                (countInArc - 1 - idxInArc)
+            } else {
+                idxInArc
+            }
+            val angleDeg = startDeg + orderedIdx * stepDeg
+            val angleRad = Math.toRadians(angleDeg)
+
+            val rawX = pivotX + (radiusPx * cos(angleRad)).toFloat()
+            val rawY = pivotY + (radiusPx * sin(angleRad)).toFloat()
+
+            val nodeX = rawX.coerceIn(edgePaddingPx, (screenWidth - edgePaddingPx).coerceAtLeast(edgePaddingPx))
+            val nodeY = rawY.coerceIn(edgePaddingPx, (screenHeight - edgePaddingPx).coerceAtLeast(edgePaddingPx))
+
+            val isTopPriority = (index == 0)
             Column(
                 modifier = Modifier
                     .offset {
                         IntOffset(
-                            x = (centerX + dx - nodeHalfPx).roundToInt(),
-                            y = (centerY + dy - nodeHalfPx).roundToInt()
+                            x = (nodeX - nodeHalfPx).roundToInt(),
+                            y = (nodeY - nodeHalfPx).roundToInt()
                         )
                     }
                     .size(nodeSizeDp)
-                    .clip(CircleShape)
+                    .clip(HexagonShape)
                     .background(
-                        if (isCenterNode) Color(0xFF28322A) else Color(0xCC1B201C)
+                        if (isTopPriority) Color(0xFF28322A) else Color(0xEB171B18)
                     )
                     .border(
-                        width = if (isCenterNode) 1.5.dp else 1.dp,
-                        color = if (isCenterNode) Color(0xFF94A88B) else Color.White.copy(alpha = 0.18f),
-                        shape = CircleShape
+                        width = if (isTopPriority) 2.dp else 1.2.dp,
+                        color = if (isTopPriority) Color(0xFF94A88B) else Color.White.copy(alpha = 0.24f),
+                        shape = HexagonShape
                     )
                     .clickable { onSelectApp(app) }
-                    .padding(4.dp),
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -600,33 +623,35 @@ private fun HoneycombPopupOverlay(
                         bitmap = app.iconBitmap,
                         contentDescription = app.label,
                         modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
+                            .size(28.dp)
+                            .clip(HexagonShape)
                     )
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
+                            .size(28.dp)
+                            .clip(HexagonShape)
                             .background(Color(0xFF3A4138)),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = app.label.take(1),
                             color = Color.White,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
+                Spacer(modifier = Modifier.height(1.dp))
                 Text(
-                    text = app.label,
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontSize = 9.sp,
+                    text = app.label.take(8),
+                    color = Color.White.copy(alpha = 0.92f),
+                    fontSize = 8.5.sp,
+                    lineHeight = 10.sp,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    overflow = TextOverflow.Clip,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(0.76f)
                 )
             }
         }

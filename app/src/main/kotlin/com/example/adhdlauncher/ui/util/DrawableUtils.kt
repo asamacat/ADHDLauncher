@@ -13,9 +13,48 @@ import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Build
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import com.example.adhdlauncher.data.IconStyle
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
+
+/**
+ * ハニカム（正六角形・上下面または左右頂点）シェイプ
+ * わずかに角を丸めた美しいハニカムセル形状を生成する
+ */
+val HexagonShape: Shape = object : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val path = Path()
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val r = min(cx, cy) * 0.98f
+        // Pointy-top 正六角形（-90度から60度刻み）
+        for (i in 0 until 6) {
+            val angleRad = Math.toRadians((i * 60.0) - 90.0)
+            val x = cx + (r * cos(angleRad)).toFloat()
+            val y = cy + (r * sin(angleRad)).toFloat()
+            if (i == 0) {
+                path.moveTo(x, y)
+            } else {
+                path.lineTo(x, y)
+            }
+        }
+        path.close()
+        return Outline.Generic(path)
+    }
+}
 
 fun Drawable?.toImageBitmapOrNull(maxSizePx: Int = 144): ImageBitmap? {
     if (this == null) return null
@@ -41,8 +80,9 @@ fun Drawable?.toImageBitmapOrNull(maxSizePx: Int = 144): ImageBitmap? {
 
 /**
  * 外部アイコンパック無しで全アプリを Material You（単色・低刺激トーン）へシステム変換する
- * - Android 13 (API 33)+ で AdaptiveIconDrawable.monochrome が存在する場合は公式モノクロレイヤーを使用
- * - 存在しないアプリも輝度抽出 + カラートーン合成フィルタにより 100% 統一トーンへ変換
+ * 1. Android 13 (API 33)+ で AdaptiveIconDrawable.monochrome が存在する場合は公式モノクロレイヤーを使用
+ * 2. AdaptiveIconDrawable で monochrome が無い場合は background を除外し foreground のみを抽出して二重枠を防止
+ * 3. それ以外のレガシーアイコンは輝度＋コントラスト抽出で単色化
  */
 fun Drawable?.toThemedImageBitmapOrNull(
     style: IconStyle,
@@ -51,12 +91,8 @@ fun Drawable?.toThemedImageBitmapOrNull(
     if (this == null) return null
     if (style == IconStyle.ORIGINAL) return toImageBitmapOrNull(maxSizePx)
 
-    val (bgColor, fgColor) = when (style) {
-        IconStyle.MATERIAL_SAGE -> Color.rgb(0x23, 0x2B, 0x22) to Color.rgb(0xB8, 0xCC, 0xAE)
-        IconStyle.MATERIAL_CYAN -> Color.rgb(0x18, 0x24, 0x30) to Color.rgb(0x90, 0xCA, 0xF9)
-        IconStyle.MONOCHROME -> Color.rgb(0x1E, 0x1F, 0x22) to Color.rgb(0xE2, 0xE4, 0xE8)
-        IconStyle.ORIGINAL -> return toImageBitmapOrNull(maxSizePx)
-    }
+    val bgColor = (0xFF000000.toInt()) or style.bgHex
+    val fgColor = (0xFF000000.toInt()) or style.fgHex
 
     return try {
         val outBitmap = Bitmap.createBitmap(maxSizePx, maxSizePx, Bitmap.Config.ARGB_8888)
@@ -75,7 +111,7 @@ fun Drawable?.toThemedImageBitmapOrNull(
             bgPaint
         )
 
-        // 2. Android 13+ のネイティブ Monochrome レイヤーがあれば優先利用
+        // 2. Android 13+ のネイティブ Monochrome レイヤーがあれば最優先利用
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && this is AdaptiveIconDrawable) {
             val mono = this.monochrome
             if (mono != null) {
@@ -88,26 +124,36 @@ fun Drawable?.toThemedImageBitmapOrNull(
             }
         }
 
-        // 3. フォールバック：元のアイコンを一旦描画し、彩度0＋コントラスト強調＋テーマカラー乗算でMaterial You風に変換
+        // 3. フォールバック改善：AdaptiveIconDrawable なら background を捨てて foreground のみ抽出（二重枠の解消）
+        val targetDrawable: Drawable = if (this is AdaptiveIconDrawable && this.foreground != null) {
+            this.foreground
+        } else {
+            this
+        }
+
         val srcBitmap = Bitmap.createBitmap(maxSizePx, maxSizePx, Bitmap.Config.ARGB_8888)
         val srcCanvas = Canvas(srcBitmap)
-        val pad = (maxSizePx * 0.14f).toInt()
-        setBounds(pad, pad, maxSizePx - pad, maxSizePx - pad)
-        draw(srcCanvas)
+        val inset = if (this is AdaptiveIconDrawable) {
+            (maxSizePx * -0.12f).toInt()
+        } else {
+            (maxSizePx * 0.16f).toInt()
+        }
+        targetDrawable.setBounds(inset, inset, maxSizePx - inset, maxSizePx - inset)
+        targetDrawable.draw(srcCanvas)
 
         val r = Color.red(fgColor) / 255f
         val g = Color.green(fgColor) / 255f
         val b = Color.blue(fgColor) / 255f
 
-        // 輝度抽出 + コントラスト調整 + テーマ色ティント行列
-        val lumR = 0.299f * 1.15f
-        val lumG = 0.587f * 1.15f
-        val lumB = 0.114f * 1.15f
+        // 輝度抽出 + コントラスト強調 + テーマカラー合成行列
+        val lumR = 0.299f * 1.18f
+        val lumG = 0.587f * 1.18f
+        val lumB = 0.114f * 1.18f
         val matrix = ColorMatrix(
             floatArrayOf(
-                lumR * r, lumG * r, lumB * r, 0f, 12f * r,
-                lumR * g, lumG * g, lumB * g, 0f, 12f * g,
-                lumR * b, lumG * b, lumB * b, 0f, 12f * b,
+                lumR * r, lumG * r, lumB * r, 0f, 10f * r,
+                lumR * g, lumG * g, lumB * g, 0f, 10f * g,
+                lumR * b, lumG * b, lumB * b, 0f, 10f * b,
                 0f, 0f, 0f, 1f, 0f
             )
         )

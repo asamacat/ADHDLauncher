@@ -53,6 +53,7 @@ import com.example.adhdlauncher.data.DrawerSortOrder
 import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.JapaneseSearchMatcher
 import com.example.adhdlauncher.data.LauncherPreferences
+import com.example.adhdlauncher.ui.util.HexagonShape
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -280,7 +281,7 @@ fun DrawerScreen(
                                     onLongClick = { longPressedApp = app }
                                 )
                             } else {
-                                Spacer(modifier = Modifier.height(78.dp))
+                                Spacer(modifier = Modifier.height(82.dp))
                             }
                         }
                     }
@@ -553,7 +554,7 @@ fun AppGridItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
         modifier = modifier
-            .height(78.dp)
+            .height(82.dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
@@ -569,13 +570,13 @@ fun AppGridItem(
                 contentDescription = app.label,
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(HexagonShape)
             )
         } else {
             Box(
                 modifier = Modifier
                     .size(50.dp)
-                    .clip(CircleShape)
+                    .clip(HexagonShape)
                     .background(Color.White.copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -593,6 +594,7 @@ fun AppGridItem(
         Text(
             text = app.label,
             fontSize = 11.sp,
+            lineHeight = 14.sp,
             color = Color.White,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
