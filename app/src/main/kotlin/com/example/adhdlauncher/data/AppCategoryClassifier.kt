@@ -22,52 +22,67 @@ object AppCategoryClassifier {
                     .open("dictionaries/app_dictionary.json")
                     .bufferedReader(Charsets.UTF_8)
                     .use { it.readText() }
-                val root = JSONObject(jsonText)
-
-                // 1. package_rules の読み込み
-                root.optJSONObject("package_rules")?.let { pkgObj ->
-                    for (catKey in pkgObj.keys()) {
-                        val category = runCatching { AppCategory.valueOf(catKey) }.getOrNull() ?: continue
-                        val arr = pkgObj.optJSONArray(catKey) ?: continue
-                        for (i in 0 until arr.length()) {
-                            val pkg = arr.optString(i)
-                            if (pkg.isNotBlank()) {
-                                packageRules[pkg] = category
-                            }
-                        }
-                    }
-                }
-
-                // 2. category_keywords の読み込み
-                root.optJSONObject("category_keywords")?.let { kwObj ->
-                    for (catKey in kwObj.keys()) {
-                        val category = runCatching { AppCategory.valueOf(catKey) }.getOrNull() ?: continue
-                        val arr = kwObj.optJSONArray(catKey) ?: continue
-                        val list = mutableListOf<String>()
-                        for (i in 0 until arr.length()) {
-                            val kw = arr.optString(i).lowercase()
-                            if (kw.isNotBlank()) {
-                                list.add(kw)
-                            }
-                        }
-                        categoryKeywords[category] = list
-                    }
-                }
-
-                // 3. search_aliases の読み込み
-                root.optJSONObject("search_aliases")?.let { aliasObj ->
-                    for (key in aliasObj.keys()) {
-                        val value = aliasObj.optString(key)
-                        if (key.isNotBlank() && value.isNotBlank()) {
-                            searchAliases[key] = value
-                        }
-                    }
-                }
-
-                isLoaded = true
+                loadFromJson(jsonText)
             } catch (_: Exception) {
                 isLoaded = true
             }
+        }
+    }
+
+    fun loadFromJson(jsonText: String) {
+        synchronized(this) {
+            val root = JSONObject(jsonText)
+
+            // 1. package_rules の読み込み
+            root.optJSONObject("package_rules")?.let { pkgObj ->
+                for (catKey in pkgObj.keys()) {
+                    val category = runCatching { AppCategory.valueOf(catKey) }.getOrNull() ?: continue
+                    val arr = pkgObj.optJSONArray(catKey) ?: continue
+                    for (i in 0 until arr.length()) {
+                        val pkg = arr.optString(i)
+                        if (pkg.isNotBlank()) {
+                            packageRules[pkg] = category
+                        }
+                    }
+                }
+            }
+
+            // 2. category_keywords の読み込み
+            root.optJSONObject("category_keywords")?.let { kwObj ->
+                for (catKey in kwObj.keys()) {
+                    val category = runCatching { AppCategory.valueOf(catKey) }.getOrNull() ?: continue
+                    val arr = kwObj.optJSONArray(catKey) ?: continue
+                    val list = mutableListOf<String>()
+                    for (i in 0 until arr.length()) {
+                        val kw = arr.optString(i).lowercase()
+                        if (kw.isNotBlank()) {
+                            list.add(kw)
+                        }
+                    }
+                    categoryKeywords[category] = list
+                }
+            }
+
+            // 3. search_aliases の読み込み
+            root.optJSONObject("search_aliases")?.let { aliasObj ->
+                for (key in aliasObj.keys()) {
+                    val value = aliasObj.optString(key)
+                    if (key.isNotBlank() && value.isNotBlank()) {
+                        searchAliases[key] = value
+                    }
+                }
+            }
+
+            isLoaded = true
+        }
+    }
+
+    fun resetForTesting() {
+        synchronized(this) {
+            isLoaded = false
+            packageRules.clear()
+            categoryKeywords.clear()
+            searchAliases.clear()
         }
     }
 

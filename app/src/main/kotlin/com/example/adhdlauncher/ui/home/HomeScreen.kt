@@ -235,14 +235,13 @@ fun HomeScreen(
                     }
                 )
             }
-            .systemBarsPadding()
-            .imePadding()
     ) {
         // 1A. 時計＋上部ウィジェット領域（画面上部）
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
+                .systemBarsPadding()
                 .padding(top = 36.dp, start = 20.dp, end = 20.dp)
                 .alpha(uiAlpha),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -281,6 +280,8 @@ fun HomeScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
+                .systemBarsPadding()
+                .imePadding()
                 .padding(horizontal = 20.dp, vertical = 18.dp)
                 .alpha(uiAlpha),
             horizontalAlignment = if (handedness == Handedness.RIGHT) Alignment.End else Alignment.Start

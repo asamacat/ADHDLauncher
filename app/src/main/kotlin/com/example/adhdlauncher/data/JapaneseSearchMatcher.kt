@@ -65,11 +65,12 @@ object JapaneseSearchMatcher {
             }
         }
 
-        // 2. ローマ字音節をひらがなへ置換
+        // 2. ローマ字音節をひらがなへ置換（長音ハイフン含む）
         var s = sokuonProcessed.toString()
         for ((rom, hira) in romajiToHiragana) {
             s = s.replace(rom, hira)
         }
+        s = s.replace('-', 'ー')
 
         // 3. 撥音（ん）の変換: 母音や y 以外の直前・または末尾に残った単独の 'n' を 'ん' に変換
         val finalSb = StringBuilder(s.length)

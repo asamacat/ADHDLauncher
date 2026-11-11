@@ -162,7 +162,7 @@ class AppRepository(private val context: Context) {
         val newCount = app.launchCount + 1
         val now = System.currentTimeMillis()
         val bucketKey = getCurrentContextBucketKey()
-        val newCtxScore = usagePrefs.getInt("${bucketKey}_${app.packageName}", app.contextScore) + 1
+        val newCtxScore = usagePrefs.getInt("${bucketKey}_${app.packageName}", 0) + 1
 
         usagePrefs.edit()
             .putInt("count_${app.packageName}", newCount)

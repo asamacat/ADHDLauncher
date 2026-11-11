@@ -2,6 +2,7 @@ package com.example.adhdlauncher.ui.settings
 
 import android.content.Intent
 import android.provider.Settings
+import com.example.adhdlauncher.BuildConfig
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -223,7 +224,7 @@ private fun RootSettingsView(
                         color = Color.White
                     )
                     Text(
-                        text = "ADHD Launcher v0.3.1",
+                        text = "ADHD Launcher v${BuildConfig.VERSION_NAME}",
                         fontSize = 11.sp,
                         color = Color.White.copy(alpha = 0.45f)
                     )
