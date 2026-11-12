@@ -370,6 +370,7 @@ fun LauncherMain(
             SettingsScreen(
                 apps = apps,
                 preferences = preferences,
+                appRepository = appRepository,
                 initialPage = settingsInitialPage,
                 updateManager = updateManager,
                 onPickWidget = onPickWidget,
@@ -387,7 +388,7 @@ fun LauncherMain(
                     scope.launch {
                         apps = appRepository.getInstalledApps(
                             forceRefresh = true,
-                            iconStyle = iconStyle
+                            iconStyle = preferences.iconStyle.value
                         )
                     }
                 },

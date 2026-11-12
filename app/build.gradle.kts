@@ -13,8 +13,8 @@ android {
     applicationId = "com.example.adhdlauncher"
     minSdk = 26
     targetSdk = 36
-    versionCode = 3
-    versionName = "0.3.3"
+    versionCode = 4
+    versionName = "0.3.4"
   }
 
   val keystorePropsFile = rootProject.file("keystore.properties").takeIf { it.exists() }

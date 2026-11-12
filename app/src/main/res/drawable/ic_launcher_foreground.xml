@@ -4,13 +4,14 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- The Centering Arc (Variant 2): Outer sweeping dark charcoal arc -->
+    <!-- Outer Honeycomb Semi-Circle: 4-side Open Hexagon Frame -->
     <path
         android:fillColor="#00000000"
-        android:pathData="M 52,80 A 26,26 0 1 1 79.5,49"
+        android:pathData="M 54,80 L 31.48,67 L 31.48,41 L 54,28 L 76.52,41"
         android:strokeWidth="6.2"
         android:strokeColor="#3A4138"
-        android:strokeLineCap="round" />
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
 
     <!-- Center solid anchor circle -->
     <path

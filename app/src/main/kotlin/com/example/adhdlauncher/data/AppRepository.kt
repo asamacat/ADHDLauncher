@@ -4,16 +4,24 @@ import android.app.usage.UsageStatsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import com.example.adhdlauncher.ui.util.toThemedImageBitmapOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.Calendar
 
-class AppRepository(private val context: Context) {
+class AppRepository(
+    private val context: Context?,
+    private val usagePrefs: SharedPreferences
+) {
+    constructor(context: Context) : this(
+        context,
+        context.getSharedPreferences("adhd_app_usage", Context.MODE_PRIVATE)
+    )
 
-    private val packageManager: PackageManager = context.packageManager
-    private val usagePrefs = context.getSharedPreferences("adhd_app_usage", Context.MODE_PRIVATE)
+    private val packageManager: PackageManager? = context?.packageManager
     private var cachedApps: List<AppInfo>? = null
     private var cachedIconStyle: IconStyle? = null
 
@@ -61,7 +69,7 @@ class AppRepository(private val context: Context) {
 
     private fun querySystemUsageScores(): Map<String, Long> {
         return try {
-            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+            val usm = context?.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
                 ?: return emptyMap()
             val now = System.currentTimeMillis()
             val stats = usm.queryUsageStats(
@@ -84,14 +92,17 @@ class AppRepository(private val context: Context) {
             return@withContext cachedApps!!
         }
 
+        val ctx = context ?: return@withContext emptyList()
+        val pm = packageManager ?: return@withContext emptyList()
+
         val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
             addCategory(Intent.CATEGORY_LAUNCHER)
         }
 
-        AppCategoryClassifier.ensureLoaded(context)
+        AppCategoryClassifier.ensureLoaded(ctx)
 
-        val resolveInfos = packageManager.queryIntentActivities(mainIntent, 0)
-        val myPackageName = context.packageName
+        val resolveInfos = pm.queryIntentActivities(mainIntent, 0)
+        val myPackageName = ctx.packageName
         val systemUsageMap = querySystemUsageScores()
 
         val apps = resolveInfos
@@ -99,8 +110,8 @@ class AppRepository(private val context: Context) {
             .map { resolveInfo ->
                 val activityInfo = resolveInfo.activityInfo
                 val pkg = activityInfo.packageName
-                val label = resolveInfo.loadLabel(packageManager).toString()
-                val iconBitmap = resolveInfo.loadIcon(packageManager).toThemedImageBitmapOrNull(iconStyle, 144)
+                val label = resolveInfo.loadLabel(pm).toString()
+                val iconBitmap = resolveInfo.loadIcon(pm).toThemedImageBitmapOrNull(iconStyle, 144)
 
                 // 手動カテゴリ設定があれば優先、なければ自動分類
                 val customCatName = usagePrefs.getString("cat_$pkg", null)
@@ -187,7 +198,7 @@ class AppRepository(private val context: Context) {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
         }
         try {
-            context.startActivity(intent)
+            context?.startActivity(intent)
         } catch (_: Exception) {
             // アンインストール直後等で起動できない場合はキャッシュから除外してクラッシュを防ぐ
             val filtered = updatedList.filterNot { it.packageName == app.packageName && it.activityName == app.activityName }
@@ -243,5 +254,97 @@ class AppRepository(private val context: Context) {
         }?.sortedWith(usageComparator) ?: emptyList()
         cachedApps = updated
         return updated
+    }
+
+    /**
+     * 学習データ（起動回数・最終起動時刻・手動カテゴリ・非表示設定・時間帯コンテキストスコア）をJSONObjectへ書き出す
+     */
+    fun exportUsageData(): JSONObject {
+        val json = JSONObject()
+        val all = usagePrefs.all
+        for ((key, value) in all) {
+            if (!isValidUsageKey(key)) continue
+            when (value) {
+                is Boolean -> json.put(key, value)
+                is Int -> json.put(key, value)
+                is Long -> json.put(key, value)
+                is Float -> json.put(key, value.toDouble())
+                is String -> json.put(key, value)
+            }
+        }
+        return json
+    }
+
+    /**
+     * 学習データのJSONObjectを検証し、既存の usagePrefs を完全置換（クリア＆上書き）してキャッシュを無効化する
+     * @return 復元されたエントリ数
+     */
+    fun importUsageData(json: JSONObject): Int {
+        val keys = json.keys()
+        val validEntries = mutableListOf<Pair<String, Any>>()
+
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (!isValidUsageKey(key)) continue
+            val value = json.opt(key) ?: continue
+            if (value == JSONObject.NULL) continue
+            validEntries.add(key to value)
+        }
+
+        val editor = usagePrefs.edit()
+        editor.clear()
+        var restoredCount = 0
+
+        for ((key, value) in validEntries) {
+            when {
+                key.startsWith("time_") -> {
+                    if (value is Number) {
+                        editor.putLong(key, value.toLong())
+                        restoredCount++
+                    }
+                }
+                key.startsWith("cat_") -> {
+                    val cat = (value as? String)?.let { name ->
+                        runCatching { AppCategory.valueOf(name) }.getOrNull()
+                    }
+                    if (cat != null && cat != AppCategory.ALL) {
+                        editor.putString(key, cat.name)
+                        restoredCount++
+                    }
+                }
+                key.startsWith("hidden_") -> {
+                    if (value is Boolean) {
+                        editor.putBoolean(key, value)
+                        restoredCount++
+                    }
+                }
+                key.startsWith("count_") || key.startsWith("ctx_") || isPackageLaunchCountKey(key) -> {
+                    if (value is Number) {
+                        editor.putInt(key, value.toInt())
+                        restoredCount++
+                    }
+                }
+            }
+        }
+
+        editor.apply()
+        cachedApps = null
+        return restoredCount
+    }
+
+    private fun isValidUsageKey(key: String): Boolean {
+        if (key.isBlank()) return false
+        return key.startsWith("count_") ||
+            key.startsWith("time_") ||
+            key.startsWith("cat_") ||
+            key.startsWith("hidden_") ||
+            key.startsWith("ctx_") ||
+            isPackageLaunchCountKey(key)
+    }
+
+    private fun isPackageLaunchCountKey(key: String): Boolean {
+        return key.contains('.') &&
+            !key.startsWith("key_") &&
+            !key.startsWith("cat_label_")
     }
 }

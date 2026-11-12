@@ -4,13 +4,23 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import com.example.adhdlauncher.BuildConfig
+import com.example.adhdlauncher.R
+import com.example.adhdlauncher.data.AppRepository
 import com.example.adhdlauncher.data.UpdateManager
 import com.example.adhdlauncher.data.UpdateStatus
-import androidx.activity.compose.BackHandler
 import kotlinx.coroutines.launch
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -31,10 +41,17 @@ import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DynamicFeed
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -42,6 +59,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shop
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Speed
@@ -64,6 +82,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -102,6 +121,7 @@ private val AccentSage = Color(0xFF94A88B)
 fun SettingsScreen(
     apps: List<AppInfo>,
     preferences: LauncherPreferences,
+    appRepository: AppRepository? = null,
     initialPage: SettingsPage = SettingsPage.ROOT,
     updateManager: UpdateManager? = null,
     onPickWidget: () -> Unit = {},
@@ -115,6 +135,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val effectiveUpdateManager = updateManager ?: remember { UpdateManager(context, preferences) }
+    val effectiveAppRepository = appRepository ?: remember { AppRepository(context) }
     var currentPage by remember(initialPage) { mutableStateOf(initialPage) }
 
     BackHandler {
@@ -182,8 +203,10 @@ fun SettingsScreen(
                 )
                 SettingsPage.BACKUP -> BackupSettingsView(
                     preferences = preferences,
+                    appRepository = effectiveAppRepository,
                     onResetUsageHistory = onResetUsageHistory,
                     onUnhideAllApps = onUnhideAllApps,
+                    onRefreshApps = onRefreshApps,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
                 SettingsPage.APP_INFO -> AppInfoSettingsView(
@@ -223,11 +246,10 @@ private fun RootSettingsView(
                     modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Box(
-                            modifier = Modifier
-                                .size(14.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF3A4138))
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentDescription = "ADHD Launcher Logo",
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
@@ -350,7 +372,7 @@ private fun RootSettingsView(
         RootMenuItem(
             icon = Icons.Outlined.Restore,
             title = "データ管理とバックアップ",
-            subtitle = "クリップボード設定バックアップ・非表示アプリ復元・初期化",
+            subtitle = "ファイル・共有・クリップボードでのバックアップと復元・初期化",
             onClick = { onNavigate(SettingsPage.BACKUP) }
         )
 
@@ -1990,13 +2012,64 @@ private fun GestureSettingsView(
 @Composable
 private fun BackupSettingsView(
     preferences: LauncherPreferences,
+    appRepository: AppRepository,
     onResetUsageHistory: () -> Unit,
     onUnhideAllApps: () -> Unit,
+    onRefreshApps: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    var includeLearningData by remember { mutableStateOf(true) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var isErrorMessage by remember { mutableStateOf(false) }
+    var pendingRestoreJson by remember { mutableStateOf<String?>(null) }
+
+    val exportFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val json = preferences.exportBackupJson(
+                    includeLearningData = includeLearningData,
+                    appRepository = appRepository
+                )
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(json.toByteArray(Charsets.UTF_8))
+                    outputStream.flush()
+                }
+                statusMessage = "バックアップファイルを保存しました"
+                isErrorMessage = false
+                Toast.makeText(context, "バックアップファイルを保存しました", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                statusMessage = "ファイルの保存に失敗しました: ${e.message}"
+                isErrorMessage = true
+                Toast.makeText(context, "ファイルの保存に失敗しました", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val importFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            try {
+                val jsonString = context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
+                    it.readText()
+                }
+                if (jsonString.isNullOrBlank()) {
+                    statusMessage = "選択されたファイルが空です"
+                    isErrorMessage = true
+                    Toast.makeText(context, "選択されたファイルが空です", Toast.LENGTH_SHORT).show()
+                } else {
+                    pendingRestoreJson = jsonString
+                }
+            } catch (e: Exception) {
+                statusMessage = "ファイルの読み込みに失敗しました: ${e.message}"
+                isErrorMessage = true
+                Toast.makeText(context, "ファイルの読み込みに失敗しました", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -2007,44 +2080,60 @@ private fun BackupSettingsView(
         SubPageHeader(title = "データ管理とバックアップ", onBack = onBack)
 
         Text(
-            text = "設定のバックアップと復元",
+            text = "設定と学習データの引き継ぎ（機種変更・バックアップ）",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
             modifier = Modifier.padding(vertical = 8.dp)
         )
 
-        // クリップボードにコピー
+        // 学習データ含有トグル（デフォルトON）
+        CleanSwitchRow(
+            title = "学習データ（アプリ利用頻度・時間帯スコア）も含める",
+            subtitle = "機種変更時にこれまでの利用習慣や自動配置スコアを丸ごと引き継ぎます",
+            checked = includeLearningData,
+            onCheckedChange = { includeLearningData = it }
+        )
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        // 1. ファイルに保存（エクスポート - SAF CreateDocument）
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .clickable {
                     try {
-                        val json = preferences.exportToJson()
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                        val clip = ClipData.newPlainText("adhd_launcher_prefs", json)
-                        clipboard.setPrimaryClip(clip)
-                        statusMessage = "現在の設定をクリップボードにコピーしました"
-                        isErrorMessage = false
-                        Toast.makeText(context, "設定をクリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                        val timestamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.getDefault()).format(Date())
+                        val defaultFileName = "adhd_launcher_backup_$timestamp.json"
+                        exportFileLauncher.launch(defaultFileName)
                     } catch (e: Exception) {
-                        statusMessage = "バックアップに失敗しました: ${e.message}"
+                        statusMessage = "ファイル保存画面を開けませんでした: ${e.message}"
                         isErrorMessage = true
                     }
                 }
-                .padding(vertical = 16.dp),
+                .padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                imageVector = Icons.Default.FileDownload,
+                contentDescription = null,
+                tint = AccentSage,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
-                    text = "現在の設定をクリップボードにコピー",
+                    text = "ファイルに保存（エクスポート）",
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White
                 )
                 Text(
-                    text = "ランチャーの全設定をJSON形式でクリップボードに書き出します",
+                    text = "端末内のフォルダやGoogleドライブへJSONバックアップファイルを保存します",
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.55f)
                 )
@@ -2053,7 +2142,161 @@ private fun BackupSettingsView(
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
 
-        // クリップボードから復元
+        // 2. バックアップファイルを共有（Share Sheet / Quick Share）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    try {
+                        val json = preferences.exportBackupJson(
+                            includeLearningData = includeLearningData,
+                            appRepository = appRepository
+                        )
+                        val backupDir = File(context.cacheDir, "backups")
+                        if (!backupDir.exists()) {
+                            backupDir.mkdirs()
+                        }
+                        val backupFile = File(backupDir, "adhd_launcher_backup.json")
+                        backupFile.writeText(json, Charsets.UTF_8)
+
+                        val uri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.fileprovider",
+                            backupFile
+                        )
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(
+                            Intent.createChooser(shareIntent, "バックアップを共有")
+                        )
+                        statusMessage = "共有シートを開きました"
+                        isErrorMessage = false
+                    } catch (e: Exception) {
+                        statusMessage = "バックアップの共有に失敗しました: ${e.message}"
+                        isErrorMessage = true
+                    }
+                }
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = null,
+                tint = AccentCyan,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "バックアップファイルを共有",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Text(
+                    text = "Quick Share やクラウドアプリ経由で新しい端末へ直接送信します",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+        // 3. ファイルから復元（インポート - SAF OpenDocument）
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    try {
+                        importFileLauncher.launch(arrayOf("application/json", "text/*", "*/*"))
+                    } catch (e: Exception) {
+                        statusMessage = "ファイル選択画面を開けませんでした: ${e.message}"
+                        isErrorMessage = true
+                    }
+                }
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.FileUpload,
+                contentDescription = null,
+                tint = AccentSage,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "ファイルから復元（インポート）",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Text(
+                    text = "保存したJSONバックアップファイルを選択して設定と学習データを復元します",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+        // 4. クリップボードにコピー
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    try {
+                        val json = preferences.exportBackupJson(
+                            includeLearningData = includeLearningData,
+                            appRepository = appRepository
+                        )
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("adhd_launcher_backup", json)
+                        clipboard.setPrimaryClip(clip)
+                        statusMessage = "現在のバックアップデータをクリップボードにコピーしました"
+                        isErrorMessage = false
+                        Toast.makeText(context, "クリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        statusMessage = "バックアップに失敗しました: ${e.message}"
+                        isErrorMessage = true
+                    }
+                }
+                .padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = "現在の設定をクリップボードにコピー",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Text(
+                    text = "ランチャーの設定（および選択時は学習データ）をJSON形式でコピーします",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+        // 5. クリップボードから復元
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2068,25 +2311,23 @@ private fun BackupSettingsView(
                             isErrorMessage = true
                             Toast.makeText(context, "クリップボードが空です", Toast.LENGTH_SHORT).show()
                         } else {
-                            val success = preferences.importFromJson(jsonString)
-                            if (success) {
-                                statusMessage = "クリップボードから設定を復元しました"
-                                isErrorMessage = false
-                                Toast.makeText(context, "設定を復元しました", Toast.LENGTH_SHORT).show()
-                            } else {
-                                statusMessage = "有効な設定データが見つかりませんでした"
-                                isErrorMessage = true
-                                Toast.makeText(context, "設定の復元に失敗しました", Toast.LENGTH_SHORT).show()
-                            }
+                            pendingRestoreJson = jsonString
                         }
                     } catch (e: Exception) {
                         statusMessage = "復元エラー: ${e.message}"
                         isErrorMessage = true
                     }
                 }
-                .padding(vertical = 16.dp),
+                .padding(vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Icon(
+                imageVector = Icons.Default.ContentPaste,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(modifier = Modifier.width(16.dp))
             Column {
                 Text(
                     text = "クリップボードから設定を復元",
@@ -2095,7 +2336,7 @@ private fun BackupSettingsView(
                     color = Color.White
                 )
                 Text(
-                    text = "クリップボードのJSON設定を読み込んで設定を即時復元します",
+                    text = "クリップボードのJSONバックアップ（v1/v2両対応）を読み込んで復元します",
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.55f)
                 )
@@ -2212,6 +2453,56 @@ private fun BackupSettingsView(
 
         Spacer(modifier = Modifier.height(36.dp))
     }
+
+    // 復元前の確認ダイアログ
+    pendingRestoreJson?.let { jsonToRestore ->
+        AlertDialog(
+            onDismissRequest = { pendingRestoreJson = null },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "バックアップから復元しますか？",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "現在の設定（およびバックアップに含まれる場合は学習データ）は、バックアップの内容で完全に置き換わります。よろしいですか？",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingRestoreJson = null
+                        val result = preferences.importBackupJson(jsonToRestore, appRepository)
+                        if (result.success) {
+                            onRefreshApps()
+                            val msg = "設定 ${result.prefsCount}件・学習データ ${result.usageCount}件を復元しました"
+                            statusMessage = msg
+                            isErrorMessage = false
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        } else {
+                            statusMessage = "有効な設定データが見つかりませんでした"
+                            isErrorMessage = true
+                            Toast.makeText(context, "設定の復元に失敗しました", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("復元する", color = AccentSage, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRestoreJson = null }) {
+                    Text("キャンセル", color = Color.White.copy(alpha = 0.6f))
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -2222,6 +2513,7 @@ private fun AppInfoSettingsView(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updateStatus by updateManager.status.collectAsState()
+    var showSupportPlaceholderDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -2249,11 +2541,10 @@ private fun AppInfoSettingsView(
                     modifier = Modifier.size(54.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Box(
-                            modifier = Modifier
-                                .size(22.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF3A4138))
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                            contentDescription = "ADHD Launcher Logo",
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
                 }
@@ -2445,6 +2736,172 @@ private fun AppInfoSettingsView(
             Text("最新版を確認", fontWeight = FontWeight.SemiBold)
         }
 
+        Spacer(modifier = Modifier.height(22.dp))
+
+        // オープンソースと開発支援（寄付・サポート枠 / GitHub / Issues）
+        Text(
+            text = "オープンソースと開発支援",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xFF14161B),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
+                // Item 1: 開発者を支援する（寄付・サポート枠）
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { showSupportPlaceholderDialog = true }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FavoriteBorder,
+                            contentDescription = null,
+                            tint = AccentSage,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "開発者を支援する（寄付・サポート枠）",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "継続的な開発を応援する（詳細リンク準備中）",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                // Item 2: ソースコード (GitHub)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/asamacat/ADHDLauncher"))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } catch (_: Exception) {}
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = null,
+                            tint = AccentCyan,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "ソースコード (GitHub)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "asamacat/ADHDLauncher",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CallMade,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+
+                // Item 3: 不具合報告・機能要望 (Issues)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable {
+                            try {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/asamacat/ADHDLauncher/issues"))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            } catch (_: Exception) {}
+                        }
+                        .padding(vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.BugReport,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Column {
+                            Text(
+                                text = "不具合報告・機能要望 (Issues)",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "バグ報告や改善アイデアを投稿する",
+                                fontSize = 12.sp,
+                                color = Color.White.copy(alpha = 0.55f)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.CallMade,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
         // プライバシー・Zero Tracking 保証カード
@@ -2471,6 +2928,34 @@ private fun AppInfoSettingsView(
         }
 
         Spacer(modifier = Modifier.height(36.dp))
+    }
+
+    if (showSupportPlaceholderDialog) {
+        AlertDialog(
+            onDismissRequest = { showSupportPlaceholderDialog = false },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "開発者への支援・サポートについて",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "ADHD Launcher をご利用いただきありがとうございます。\nGitHub Sponsors 等の寄付・サポート窓口は現在準備中です。今後のアップデートにてご案内いたします。",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    lineHeight = 20.sp
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showSupportPlaceholderDialog = false }) {
+                    Text("閉じる", color = AccentCyan, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 }
 

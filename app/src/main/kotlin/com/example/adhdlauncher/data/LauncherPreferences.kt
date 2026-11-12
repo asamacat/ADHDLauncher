@@ -2,12 +2,20 @@ package com.example.adhdlauncher.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.adhdlauncher.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
+
+data class BackupRestoreResult(
+    val success: Boolean,
+    val prefsCount: Int,
+    val usageCount: Int,
+    val hasLearningData: Boolean
+)
 
 enum class DisplayMode(val label: String, val description: String) {
     AUTO_SCHEDULE("時間帯スケジュール", "22:00〜7:00 は有機ELの画素を消灯する完全黒モードへ自動切替"),
@@ -696,7 +704,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _idleDimEnabled.value = prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
     }
 
-    fun exportToJson(): String {
+    private fun exportPreferencesObject(): JSONObject {
         val json = JSONObject()
         val all = prefs.all
         for ((key, value) in all) {
@@ -714,53 +722,177 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
                 }
             }
         }
-        return json.toString()
+        return json
+    }
+
+    fun exportToJson(): String {
+        return exportPreferencesObject().toString()
+    }
+
+    /**
+     * Envelope v2 形式で設定データ（および任意で学習データ）をバックアップJSONとして出力する
+     */
+    fun exportBackupJson(
+        includeLearningData: Boolean = true,
+        appRepository: AppRepository? = null
+    ): String {
+        val envelope = JSONObject()
+        val includeUsage = includeLearningData && appRepository != null
+        envelope.put("version", 2)
+        envelope.put("app_version", BuildConfig.VERSION_NAME)
+        envelope.put("created_at", System.currentTimeMillis())
+        envelope.put("has_learning_data", includeUsage)
+        envelope.put("preferences", exportPreferencesObject())
+        if (includeUsage) {
+            envelope.put("usage_data", appRepository.exportUsageData())
+        } else {
+            envelope.put("usage_data", JSONObject())
+        }
+        return envelope.toString(2)
+    }
+
+    /**
+     * Envelope v2 形式および従来の v1 フラット JSON 形式の両方をサポートして設定・学習データを復元する
+     */
+    fun importBackupJson(
+        jsonString: String,
+        appRepository: AppRepository? = null
+    ): BackupRestoreResult {
+        if (jsonString.isBlank()) {
+            return BackupRestoreResult(false, 0, 0, false)
+        }
+        return try {
+            val root = JSONObject(jsonString)
+            val isV2Envelope = root.optInt("version", 1) >= 2 && root.has("preferences")
+
+            val prefsJson = if (isV2Envelope) {
+                root.optJSONObject("preferences") ?: return BackupRestoreResult(false, 0, 0, false)
+            } else {
+                root
+            }
+
+            val validPrefEntries = extractValidPreferenceEntries(prefsJson)
+
+            if (isV2Envelope) {
+                val hasLearning = root.optBoolean("has_learning_data", false) && root.has("usage_data")
+                val usageJson = root.optJSONObject("usage_data")
+
+                // v2 でも preferences と usage_data の両方が空で設定キーも存在しない不正JSONは拒否する
+                if (validPrefEntries.isEmpty() && !hasLearning && prefsJson.length() > 0) {
+                    return BackupRestoreResult(false, 0, 0, false)
+                }
+                if (hasLearning && usageJson == null) {
+                    return BackupRestoreResult(false, 0, 0, false)
+                }
+                if (validPrefEntries.isEmpty() && prefsJson.length() > 0 && hasLearning && (usageJson == null || usageJson.length() == 0)) {
+                    return BackupRestoreResult(false, 0, 0, false)
+                }
+
+                val lastCheckBackup = getLastUpdateCheckTime()
+                val editor = prefs.edit()
+                editor.clear()
+                if (lastCheckBackup > 0L) {
+                    editor.putLong(KEY_LAST_UPDATE_CHECK_TIME, lastCheckBackup)
+                }
+                val prefsRestored = writePreferenceEntries(editor, validPrefEntries)
+                editor.apply()
+                reloadFromPreferences()
+
+                val usageRestored = if (hasLearning && usageJson != null && appRepository != null) {
+                    appRepository.importUsageData(usageJson)
+                } else {
+                    0
+                }
+
+                BackupRestoreResult(
+                    success = true,
+                    prefsCount = prefsRestored,
+                    usageCount = usageRestored,
+                    hasLearningData = hasLearning && appRepository != null
+                )
+            } else {
+                // v1 Flat JSON 後方互換ルート
+                if (validPrefEntries.isEmpty()) {
+                    return BackupRestoreResult(false, 0, 0, false)
+                }
+
+                val lastCheckBackup = getLastUpdateCheckTime()
+                val editor = prefs.edit()
+                editor.clear()
+                if (lastCheckBackup > 0L) {
+                    editor.putLong(KEY_LAST_UPDATE_CHECK_TIME, lastCheckBackup)
+                }
+                val prefsRestored = writePreferenceEntries(editor, validPrefEntries)
+                editor.apply()
+                reloadFromPreferences()
+
+                BackupRestoreResult(
+                    success = true,
+                    prefsCount = prefsRestored,
+                    usageCount = 0,
+                    hasLearningData = false
+                )
+            }
+        } catch (_: Exception) {
+            BackupRestoreResult(false, 0, 0, false)
+        }
     }
 
     fun importFromJson(jsonString: String): Boolean {
-        if (jsonString.isBlank()) return false
-        return try {
-            val json = JSONObject(jsonString)
-            val keys = json.keys()
-            val validEntries = mutableListOf<Pair<String, Any>>()
-            var validKeyCount = 0
+        return importBackupJson(jsonString, appRepository = null).success
+    }
 
-            while (keys.hasNext()) {
-                val key = keys.next()
-                if (!key.startsWith("key_") && !key.startsWith("cat_label_")) {
-                    continue
-                }
-                if (key == KEY_LAST_UPDATE_CHECK_TIME) {
-                    continue
-                }
-                val value = json.opt(key) ?: continue
-                validKeyCount++
-                validEntries.add(key to value)
+    private fun extractValidPreferenceEntries(prefsJson: JSONObject): List<Pair<String, Any>> {
+        val keys = prefsJson.keys()
+        val validEntries = mutableListOf<Pair<String, Any>>()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            if (!key.startsWith("key_") && !key.startsWith("cat_label_")) {
+                continue
             }
-
-            if (validKeyCount == 0) return false
-
-            val editor = prefs.edit()
-            for ((key, value) in validEntries) {
-                when (value) {
-                    is Boolean -> editor.putBoolean(key, value)
-                    is Number -> editor.putInt(key, value.toInt())
-                    is String -> editor.putString(key, value)
-                    is JSONArray -> {
-                        val set = mutableSetOf<String>()
-                        for (i in 0 until value.length()) {
-                            set.add(value.getString(i))
-                        }
-                        editor.putStringSet(key, set)
-                    }
-                }
+            if (key == KEY_LAST_UPDATE_CHECK_TIME) {
+                continue
             }
-            editor.apply()
-            reloadFromPreferences()
-            true
-        } catch (_: Exception) {
-            false
+            val value = prefsJson.opt(key) ?: continue
+            if (value == JSONObject.NULL) continue
+            validEntries.add(key to value)
         }
+        return validEntries
+    }
+
+    private fun writePreferenceEntries(
+        editor: SharedPreferences.Editor,
+        entries: List<Pair<String, Any>>
+    ): Int {
+        var count = 0
+        for ((key, value) in entries) {
+            when (value) {
+                is Boolean -> {
+                    editor.putBoolean(key, value)
+                    count++
+                }
+                is Number -> {
+                    editor.putInt(key, value.toInt())
+                    count++
+                }
+                is String -> {
+                    editor.putString(key, value)
+                    count++
+                }
+                is JSONArray -> {
+                    val set = mutableSetOf<String>()
+                    for (i in 0 until value.length()) {
+                        val item = value.optString(i, "")
+                        if (item.isNotBlank()) {
+                            set.add(item)
+                        }
+                    }
+                    editor.putStringSet(key, set)
+                    count++
+                }
+            }
+        }
+        return count
     }
 
     fun getLastUpdateCheckTime(): Long {
