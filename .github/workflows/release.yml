@@ -29,12 +29,18 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Decode keystore if secret provided
+        if: "${{ env.KEYSTORE_BASE64 != '' }}"
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.jks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
       - name: Build APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleRelease
 
       - name: Rename APK with Tag
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk ADHDLauncher-${GITHUB_REF_NAME}.apk
+          cp app/build/outputs/apk/release/app-release.apk ADHDLauncher-${GITHUB_REF_NAME}.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

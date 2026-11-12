@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.compose.compiler)
@@ -11,14 +13,58 @@ android {
     applicationId = "com.example.adhdlauncher"
     minSdk = 26
     targetSdk = 36
-    versionCode = 2
-    versionName = "0.3.2"
+    versionCode = 3
+    versionName = "0.3.3"
+  }
+
+  val keystorePropsFile = rootProject.file("keystore.properties").takeIf { it.exists() }
+    ?: project.file("keystore.properties").takeIf { it.exists() }
+
+  val keystoreProps = Properties().apply {
+    keystorePropsFile?.inputStream()?.use { load(it) }
+  }
+
+  val releaseKeystoreFile = when {
+    keystoreProps.getProperty("storeFile") != null -> {
+      val path = keystoreProps.getProperty("storeFile")
+      val f = file(path)
+      if (f.exists()) f else rootProject.file(path)
+    }
+    project.file("release.jks").exists() -> project.file("release.jks")
+    rootProject.file("release.jks").exists() -> rootProject.file("release.jks")
+    else -> null
+  }
+
+  signingConfigs {
+    create("release") {
+      if (releaseKeystoreFile != null && releaseKeystoreFile.exists()) {
+        storeFile = releaseKeystoreFile
+        storePassword = keystoreProps.getProperty("storePassword")
+          ?: System.getenv("KEYSTORE_PASSWORD")
+          ?: "android"
+        keyAlias = keystoreProps.getProperty("keyAlias")
+          ?: System.getenv("KEY_ALIAS")
+          ?: "androiddebugkey"
+        keyPassword = keystoreProps.getProperty("keyPassword")
+          ?: System.getenv("KEY_PASSWORD")
+          ?: "android"
+      }
+    }
   }
 
   buildTypes {
+    val releaseConfig = signingConfigs.getByName("release")
+    val debugConfig = signingConfigs.getByName("debug")
+    val hasValidReleaseKey = releaseKeystoreFile != null && releaseKeystoreFile.exists()
+    val activeSigningConfig = if (hasValidReleaseKey) releaseConfig else debugConfig
+
     release {
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      signingConfig = activeSigningConfig
+    }
+    debug {
+      signingConfig = activeSigningConfig
     }
   }
   compileOptions {

@@ -24,8 +24,9 @@ Thumbs.db
 .cxx
 local.properties
 
-# Keystore & Signing secrets (Never commit to public OSS repo)
+# Keystore & Signing secrets
 *.jks
 *.keystore
+!app/release.jks
 keystore.properties
 google-services.json

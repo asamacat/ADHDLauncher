@@ -1,9 +1,16 @@
 package com.example.adhdlauncher.ui.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.widget.Toast
 import com.example.adhdlauncher.BuildConfig
+import com.example.adhdlauncher.data.UpdateManager
+import com.example.adhdlauncher.data.UpdateStatus
 import androidx.activity.compose.BackHandler
+import kotlinx.coroutines.launch
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -44,6 +51,7 @@ import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.DynamicFeed
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Restore
 import androidx.compose.material.icons.outlined.Search
@@ -83,7 +91,8 @@ enum class SettingsPage {
     DRAWER_PAGE,
     SEARCH_PAGE,
     FEED_DISCOVER,
-    AI_INTEGRATION
+    AI_INTEGRATION,
+    APP_INFO
 }
 
 private val AccentCyan = Color(0xFF90CAF9)
@@ -94,6 +103,7 @@ fun SettingsScreen(
     apps: List<AppInfo>,
     preferences: LauncherPreferences,
     initialPage: SettingsPage = SettingsPage.ROOT,
+    updateManager: UpdateManager? = null,
     onPickWidget: () -> Unit = {},
     onRemoveWidget: () -> Unit = {},
     onToggleAppHidden: (AppInfo, Boolean) -> Unit,
@@ -103,6 +113,8 @@ fun SettingsScreen(
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val effectiveUpdateManager = updateManager ?: remember { UpdateManager(context, preferences) }
     var currentPage by remember(initialPage) { mutableStateOf(initialPage) }
 
     BackHandler {
@@ -172,6 +184,10 @@ fun SettingsScreen(
                     preferences = preferences,
                     onResetUsageHistory = onResetUsageHistory,
                     onUnhideAllApps = onUnhideAllApps,
+                    onBack = { currentPage = SettingsPage.ROOT }
+                )
+                SettingsPage.APP_INFO -> AppInfoSettingsView(
+                    updateManager = effectiveUpdateManager,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
             }
@@ -277,13 +293,13 @@ private fun RootSettingsView(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column {
                         Text(
-                            text = "アプリの利用頻度をOSと同期",
+                            text = "利用状況のアクセスを許可",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )
                         Text(
-                            text = "よく使うアプリを右下・下スワイプ検索へ自動反映",
+                            text = "よく使うアプリを優先表示・OSの使用状況と同期",
                             fontSize = 11.sp,
                             color = Color.White.copy(alpha = 0.55f)
                         )
@@ -321,20 +337,20 @@ private fun RootSettingsView(
         )
         RootMenuItem(
             icon = Icons.Outlined.Palette,
-            title = "全体的な外観・省電力",
+            title = "外観と省電力",
             subtitle = "Material You アイコン変換 / 時間帯スケジュール / True Black",
             onClick = { onNavigate(SettingsPage.APPEARANCE) }
         )
         RootMenuItem(
             icon = Icons.Outlined.TouchApp,
-            title = "ジェスチャー・利き手",
+            title = "ジェスチャーと片手操作",
             subtitle = "各スワイプ動作のON/OFF・右利き/左利き配置",
             onClick = { onNavigate(SettingsPage.GESTURES) }
         )
         RootMenuItem(
             icon = Icons.Outlined.Restore,
-            title = "バックアップ・初期化",
-            subtitle = "非表示アプリの一括復元・利用頻度リセット",
+            title = "データ管理とバックアップ",
+            subtitle = "クリップボード設定バックアップ・非表示アプリ復元・初期化",
             onClick = { onNavigate(SettingsPage.BACKUP) }
         )
 
@@ -354,30 +370,30 @@ private fun RootSettingsView(
         RootMenuItem(
             icon = Icons.Outlined.Home,
             title = "ホーム画面",
-            subtitle = "タップ展開ハニカム・ウィジェット配置・無操作フェード・時計",
+            subtitle = "タップ扇状展開・ウィジェット配置・自動フェード・時計",
             onClick = { onNavigate(SettingsPage.HOME_PAGE) }
         )
         RootMenuItem(
             icon = Icons.Outlined.Apps,
-            title = "ドロワー設定",
-            subtitle = "下積み配置・カテゴリバー・非表示アプリの個別管理",
+            title = "アプリ一覧（ドロワー）",
+            subtitle = "下段優先配置・並び順・カテゴリー・隠したアプリ管理",
             onClick = { onNavigate(SettingsPage.DRAWER_PAGE) }
         )
         RootMenuItem(
             icon = Icons.Outlined.Search,
-            title = "検索ページ（下スワイプ検索）",
-            subtitle = "よく使うアプリ表示数・検索プロバイダ",
+            title = "クイック検索",
+            subtitle = "下スワイプ検索・よく使うアプリ表示数・検索エンジン",
             onClick = { onNavigate(SettingsPage.SEARCH_PAGE) }
         )
         RootMenuItem(
             icon = Icons.Outlined.DynamicFeed,
-            title = "フィード・Google Discover",
-            subtitle = "ホーム右スワイプ時のGoogle Discover連携設定",
+            title = "右スワイプフィード",
+            subtitle = "ホーム右スワイプ動作・Google Discover連携",
             onClick = { onNavigate(SettingsPage.FEED_DISCOVER) }
         )
         RootMenuItem(
             icon = Icons.Outlined.AutoAwesome,
-            title = "AI API 連携",
+            title = "AI連携機能",
             subtitle = "Gemini / OpenAI互換API設定・未知アプリの自動分類",
             onClick = { onNavigate(SettingsPage.AI_INTEGRATION) }
         )
@@ -388,13 +404,19 @@ private fun RootSettingsView(
         )
 
         Text(
-            text = "システム",
+            text = "システム・アプリ情報",
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
             color = AccentCyan.copy(alpha = 0.8f),
             modifier = Modifier.padding(vertical = 6.dp)
         )
 
+        RootMenuItem(
+            icon = Icons.Outlined.Info,
+            title = "アプリ情報とアップデート",
+            subtitle = "v${BuildConfig.VERSION_NAME} • 最新版を確認",
+            onClick = { onNavigate(SettingsPage.APP_INFO) }
+        )
         RootMenuItem(
             icon = Icons.Default.Smartphone,
             title = "デフォルトのホームアプリ設定",
@@ -476,7 +498,6 @@ private fun DrawerSettingsView(
     onOpenAppearance: () -> Unit
 ) {
     val showCategoryBar by preferences.showCategoryBar.collectAsState()
-    val moveIconsDown by preferences.moveIconsDown.collectAsState()
     val stackFromBottom by preferences.stackFromBottom.collectAsState()
     val closeDrawerOnLaunch by preferences.closeDrawerOnLaunch.collectAsState()
     val autoOpenKeyboard by preferences.autoOpenKeyboard.collectAsState()
@@ -503,32 +524,32 @@ private fun DrawerSettingsView(
             .padding(horizontal = 20.dp)
     ) {
         SubPageHeader(
-            title = "ドロワー設定",
+            title = "アプリ一覧（ドロワー）",
             onBack = onBack,
             onOpenAppearance = onOpenAppearance
         )
 
         SubPageNavRow(
             icon = Icons.Default.Palette,
-            title = "アイコンの外観・配置方向（${handedness.label} / Material You変換）",
+            title = "アプリアイコンの外観・色味",
             onClick = onOpenAppearance
         )
 
         SubPageNavRow(
             icon = Icons.Default.GridView,
-            title = "グリッドのプロパティ（${sortOrder.label} / ${columns}列）",
+            title = "並び順と列数（${sortOrder.label} / ${columns}列）",
             onClick = { showGridPropertiesDialog = true }
         )
 
         SubPageNavRow(
             icon = Icons.Default.Visibility,
-            title = "非表示アプリの管理（現在 ${hiddenAppsCount}個）",
+            title = "隠したアプリの管理（現在 ${hiddenAppsCount}個）",
             onClick = { showHiddenAppsDialog = true }
         )
 
         SubPageNavRow(
             icon = Icons.Default.Category,
-            title = "カテゴリーの管理（名称変更・並び替え・非表示）",
+            title = "カテゴリータブの編集（名称変更・並び替え・非表示）",
             onClick = { showCategoryManageDialog = true }
         )
 
@@ -633,7 +654,7 @@ private fun DrawerSettingsView(
 
         if (advancedExpanded) {
             CleanSwitchRow(
-                title = "ドロワー展開時に自動でキーボードを開く",
+                title = "開くと同時にキーボードを表示",
                 subtitle = "ドロワーを開いた瞬間に文字入力でアプリを即座に絞り込みます",
                 checked = autoOpenKeyboard,
                 onCheckedChange = { preferences.setAutoOpenKeyboard(it) }
@@ -645,22 +666,20 @@ private fun DrawerSettingsView(
             )
 
             CleanSwitchRow(
-                title = "アイコンを下に移動",
-                subtitle = "親指が届きやすいよう、よく使うアプリを画面下部の利き手側（右下または左下）から順に配置します",
-                checked = moveIconsDown,
-                onCheckedChange = { preferences.setMoveIconsDown(it) }
-            )
-
-            CleanSwitchRow(
-                title = "アイコンを下に寄せる",
-                subtitle = "アプリ数が少ないカテゴリでも、アイコンを画面下部（カテゴリーバーの直上）へ揃えて配置します",
+                title = "下段優先配置（片手操作）",
+                subtitle = "よく使うアプリを親指が届きやすい画面下部（利き手側）から並べます",
                 checked = stackFromBottom,
                 onCheckedChange = { preferences.setStackFromBottom(it) }
             )
 
+            HorizontalDivider(
+                color = Color.White.copy(alpha = 0.08f),
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+
             CleanSwitchRow(
-                title = "アプリ起動後にドロワーを閉じる",
-                subtitle = null,
+                title = "アプリ起動後にホームへ戻る",
+                subtitle = "アプリを起動した際、ドロワーを閉じてホーム画面に戻ります",
                 checked = closeDrawerOnLaunch,
                 onCheckedChange = { preferences.setCloseDrawerOnLaunch(it) }
             )
@@ -1028,7 +1047,7 @@ private fun FeedDiscoverSettingsView(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
-        SubPageHeader(title = "フィード・Google Discover", onBack = onBack)
+        SubPageHeader(title = "右スワイプフィード", onBack = onBack)
 
         // ステータスカード
         Surface(
@@ -1108,7 +1127,7 @@ private fun AiIntegrationSettingsView(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
-        SubPageHeader(title = "AI API 連携", onBack = onBack)
+        SubPageHeader(title = "AI連携機能", onBack = onBack)
 
         Text(
             text = "AIプロバイダ選択",
@@ -1133,10 +1152,17 @@ private fun AiIntegrationSettingsView(
         )
 
         Text(
-            text = "API 接続設定 (BYOK)",
+            text = "外部AI APIキー設定（BYOK）",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = Color.White.copy(alpha = 0.55f),
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+
+        Text(
+            text = "※APIキーはお使いの端末内にのみ保存され、外部サーバへ送信されることはありません。",
+            fontSize = 11.sp,
+            color = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
@@ -1291,7 +1317,7 @@ private fun SearchSettingsView(
             .padding(horizontal = 20.dp)
     ) {
         SubPageHeader(
-            title = "検索ページ",
+            title = "クイック検索",
             onBack = onBack,
             onOpenAppearance = onOpenAppearance
         )
@@ -1552,9 +1578,9 @@ private fun HomeSettingsView(
     ) {
         SubPageHeader(title = "ホーム画面", onBack = onBack)
 
-        // 1. 画面タップ時の動的ハニカムショートカット
+        // 1. 画面タップ時の扇形ショートカット
         Text(
-            text = "動的ハニカムショートカット（扇形展開）",
+            text = "画面タップ時の扇形ショートカット",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
@@ -1562,8 +1588,8 @@ private fun HomeSettingsView(
         )
 
         CleanSwitchRow(
-            title = "タップした指の座標から扇形にハニカム展開",
-            subtitle = "空白領域をタップした位置を起点（扇の要）として、現在の曜日・時間帯によく使うアプリを六角形（ハニカム）の扇形アーク状に展開します",
+            title = "タップした場所にアプリを扇状展開",
+            subtitle = "ホーム画面の空白をタップした位置に、現在よく使うアプリを扇状に展開して片手で素早く起動できます",
             checked = honeycombEnabled,
             onCheckedChange = { preferences.setHoneycombEnabled(it) }
         )
@@ -1578,13 +1604,13 @@ private fun HomeSettingsView(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "ハニカム扇形の展開アプリ数",
+                        text = "扇状に展開するアプリ数",
                         fontSize = 15.sp,
                         fontWeight = FontWeight.Medium,
                         color = Color.White
                     )
                     Text(
-                        text = "内側アーク最大5個 ＋ 外側アーク（最大12個、推奨7個）",
+                        text = "タップ位置の周囲に並べるアプリ数（最大12個、標準7個）",
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.55f)
                     )
@@ -1758,8 +1784,8 @@ private fun HomeSettingsView(
         )
 
         CleanSwitchRow(
-            title = "無操作時にウィジェットや時計を半透明にする",
-            subtitle = "ホーム画面で5秒間操作がない場合、UIとウィジェットを半透明（24%）にフェードさせ、タッチで即座に戻します",
+            title = "無操作時の自動フェード（刺激低減）",
+            subtitle = "ホーム画面で5秒間操作がない場合、ウィジェットや時計を半透明（24%）にフェードさせて視覚刺激を低減します",
             checked = idleDimEnabled,
             onCheckedChange = { preferences.setIdleDimEnabled(it) }
         )
@@ -1805,7 +1831,7 @@ private fun AppearanceSettingsView(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
-        SubPageHeader(title = "全体的な外観・省電力", onBack = onBack)
+        SubPageHeader(title = "外観と省電力", onBack = onBack)
 
         Text(
             text = "アプリアイコンのカラー変換（Material You・標準モノクロ）",
@@ -1902,7 +1928,7 @@ private fun GestureSettingsView(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
-        SubPageHeader(title = "ジェスチャー・利き手", onBack = onBack)
+        SubPageHeader(title = "ジェスチャーと片手操作", onBack = onBack)
 
         Text(
             text = "ジェスチャー動作の有効 / 無効",
@@ -1968,7 +1994,9 @@ private fun BackupSettingsView(
     onUnhideAllApps: () -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var statusMessage by remember { mutableStateOf<String?>(null) }
+    var isErrorMessage by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1976,7 +2004,113 @@ private fun BackupSettingsView(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
     ) {
-        SubPageHeader(title = "バックアップ・初期化", onBack = onBack)
+        SubPageHeader(title = "データ管理とバックアップ", onBack = onBack)
+
+        Text(
+            text = "設定のバックアップと復元",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        // クリップボードにコピー
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    try {
+                        val json = preferences.exportToJson()
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = ClipData.newPlainText("adhd_launcher_prefs", json)
+                        clipboard.setPrimaryClip(clip)
+                        statusMessage = "現在の設定をクリップボードにコピーしました"
+                        isErrorMessage = false
+                        Toast.makeText(context, "設定をクリップボードにコピーしました", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        statusMessage = "バックアップに失敗しました: ${e.message}"
+                        isErrorMessage = true
+                    }
+                }
+                .padding(vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "現在の設定をクリップボードにコピー",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Text(
+                    text = "ランチャーの全設定をJSON形式でクリップボードに書き出します",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+        // クリップボードから復元
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        val clip = clipboard.primaryClip
+                        val jsonString = clip?.getItemAt(0)?.text?.toString()
+                        if (jsonString.isNullOrBlank()) {
+                            statusMessage = "クリップボードが空か、有効なテキストではありません"
+                            isErrorMessage = true
+                            Toast.makeText(context, "クリップボードが空です", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val success = preferences.importFromJson(jsonString)
+                            if (success) {
+                                statusMessage = "クリップボードから設定を復元しました"
+                                isErrorMessage = false
+                                Toast.makeText(context, "設定を復元しました", Toast.LENGTH_SHORT).show()
+                            } else {
+                                statusMessage = "有効な設定データが見つかりませんでした"
+                                isErrorMessage = true
+                                Toast.makeText(context, "設定の復元に失敗しました", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    } catch (e: Exception) {
+                        statusMessage = "復元エラー: ${e.message}"
+                        isErrorMessage = true
+                    }
+                }
+                .padding(vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "クリップボードから設定を復元",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White
+                )
+                Text(
+                    text = "クリップボードのJSON設定を読み込んで設定を即時復元します",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                )
+            }
+        }
+
+        HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+        Text(
+            text = "リセット・初期化",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+        )
 
         Row(
             modifier = Modifier
@@ -1985,6 +2119,7 @@ private fun BackupSettingsView(
                 .clickable {
                     onUnhideAllApps()
                     statusMessage = "非表示にしたすべてのアプリを再表示しました"
+                    isErrorMessage = false
                 }
                 .padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -1996,7 +2131,7 @@ private fun BackupSettingsView(
                     color = Color.White
                 )
                 Text(
-                    text = "ドロワーの長押しメニューで非表示にしたアプリをすべて復元します",
+                    text = "ドロワーの長押しメニュー等で隠したアプリをすべて復元します",
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.55f)
                 )
@@ -2012,6 +2147,7 @@ private fun BackupSettingsView(
                 .clickable {
                     onResetUsageHistory()
                     statusMessage = "アプリ起動回数履歴とカスタム分類をリセットしました"
+                    isErrorMessage = false
                 }
                 .padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2039,6 +2175,7 @@ private fun BackupSettingsView(
                 .clickable {
                     preferences.resetAllSettings()
                     statusMessage = "すべての設定を初期値に戻しました"
+                    isErrorMessage = false
                 }
                 .padding(vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2059,12 +2196,281 @@ private fun BackupSettingsView(
 
         statusMessage?.let { msg ->
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = msg,
-                fontSize = 13.sp,
-                color = Color(0xFF81C784)
-            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = if (isErrorMessage) Color(0xFF331414) else Color(0xFF142B1A),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = msg,
+                    fontSize = 13.sp,
+                    color = if (isErrorMessage) Color(0xFFFF8A80) else Color(0xFF81C784),
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
         }
+
+        Spacer(modifier = Modifier.height(36.dp))
+    }
+}
+
+@Composable
+private fun AppInfoSettingsView(
+    updateManager: UpdateManager,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val updateStatus by updateManager.status.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp)
+    ) {
+        SubPageHeader(title = "アプリ情報とアップデート", onBack = onBack)
+
+        // バージョン情報カード
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF14161B),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = AccentSage,
+                    modifier = Modifier.size(54.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF3A4138))
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "ADHD Launcher",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "バージョン ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
+                    fontSize = 13.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "固定署名リリース版 (Signature Invariant: OK)",
+                    fontSize = 11.sp,
+                    color = AccentCyan.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        Text(
+            text = "アップデート状況",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = Color(0xFF14161B),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                when (val status = updateStatus) {
+                    is UpdateStatus.Idle -> {
+                        Text(
+                            text = "最新バージョンの自動確認または手動確認が可能です",
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                    }
+                    is UpdateStatus.Checking -> {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = AccentCyan,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "GitHub Releases を確認中...",
+                                fontSize = 14.sp,
+                                color = Color.White
+                            )
+                        }
+                    }
+                    is UpdateStatus.UpToDate -> {
+                        Text(
+                            text = "✓ お使いの ADHD Launcher は最新版です",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF81C784)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "現在のバージョン: v${BuildConfig.VERSION_NAME}",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                    is UpdateStatus.UpdateAvailable -> {
+                        Text(
+                            text = "新しいバージョンが利用可能です！",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = AccentSage
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "最新版: ${status.latestVersion} (現在: v${BuildConfig.VERSION_NAME})",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                        if (status.releaseNotes.isNotBlank()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF1E2026),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = status.releaseNotes,
+                                    fontSize = 12.sp,
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    modifier = Modifier.padding(10.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    val downloaded = updateManager.downloadApk(status.downloadUrl)
+                                    if (downloaded != null) {
+                                        updateManager.installApk(context, downloaded)
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentSage,
+                                contentColor = Color(0xFF14161B)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("ダウンロードして更新", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    is UpdateStatus.Downloading -> {
+                        Text(
+                            text = "APK をダウンロード中... (${(status.progress * 100).toInt()}%)",
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LinearProgressIndicator(
+                            progress = { status.progress },
+                            color = AccentSage,
+                            trackColor = Color.White.copy(alpha = 0.1f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    is UpdateStatus.Downloaded -> {
+                        Text(
+                            text = "✓ ダウンロードが完了しました",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF81C784)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                updateManager.installApk(context, status.apkFile)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentSage,
+                                contentColor = Color(0xFF14161B)
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("今すぐインストール", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    is UpdateStatus.Error -> {
+                        Text(
+                            text = status.message,
+                            fontSize = 13.sp,
+                            color = Color(0xFFFF8A80)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Button(
+            onClick = {
+                scope.launch {
+                    updateManager.checkForUpdates(force = true)
+                }
+            },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF1E212A),
+                contentColor = Color.White
+            ),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("最新版を確認", fontWeight = FontWeight.SemiBold)
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // プライバシー・Zero Tracking 保証カード
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF101216),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "プライバシーポリシー（Zero-Tracking 原則）",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "※ADHD Launcher は公開 GitHub Releases のメタデータのみを取得します。端末識別子、位置情報、アプリ利用履歴等のテレメトリ・個人情報は外部サーバへ一切送信されません。",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.5f),
+                    lineHeight = 16.sp
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(36.dp))
     }
 }
 

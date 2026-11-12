@@ -75,7 +75,6 @@ fun DrawerScreen(
     val context = LocalContext.current
     val autoOpenKeyboard by preferences.autoOpenKeyboard.collectAsState()
     val showCategoryBar by preferences.showCategoryBar.collectAsState()
-    val moveIconsDown by preferences.moveIconsDown.collectAsState()
     val stackFromBottom by preferences.stackFromBottom.collectAsState()
     val handedness by preferences.handedness.collectAsState()
     val sortOrder by preferences.drawerSortOrder.collectAsState()
@@ -191,8 +190,8 @@ fun DrawerScreen(
         }
     }
 
-    // 下積み（reverseLayout）有効判定
-    val useBottomStack = moveIconsDown || stackFromBottom
+    // 下段優先配置（reverseLayout）有効判定
+    val useBottomStack = stackFromBottom
 
     // 行単位（columns個ずつ）で利き手方向に並べ、reverseLayout = true で最下段から上へ自然に積む
     val arrangedSlots: List<AppInfo?> = remember(

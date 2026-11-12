@@ -5,6 +5,8 @@ import android.content.SharedPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Calendar
 
 enum class DisplayMode(val label: String, val description: String) {
@@ -54,50 +56,52 @@ enum class IconStyle(
 ) {
     MONOCHROME(
         "Material You（モノクローム・標準）",
-        "全アプリを完全な白黒・グレー単色に統一して視覚刺激を最小化",
+        "全アプリを完全な白黒・グレー単色に統一。鮮烈な色彩による衝動的タップやドーパミン過剰刺激を最小化します",
         0x1E1F22,
         0xE2E4E8
     ),
     MATERIAL_SAGE(
         "Material You（セージグリーン）",
-        "全アプリを落ち着いたセージグリーン単色アイコンに統一変換",
+        "穏やかなセージグリーン単色アイコンに統一変換。視覚的な緊張をほぐし、落ち着いた集中状態を保ちます",
         0x232B22,
         0xB8CCAE
     ),
     MATERIAL_CYAN(
         "Material You（シアンブルー）",
-        "全アプリを知的なシアンブルー単色アイコンに統一変換",
+        "知的なシアンブルー単色アイコンに統一変換。頭を冷静にクールダウンし、衝動的な情報過多を防ぎます",
         0x182430,
         0x90CAF9
     ),
     MATERIAL_LAVENDER(
         "Material You（ラベンダー）",
-        "全アプリを穏やかなラベンダーパープル単色アイコンに統一変換",
+        "やわらかなラベンダーパープル単色アイコンに統一変換。不安感やタスク切り替え時の焦りを和らげます",
         0x252030,
         0xCEB8F5
     ),
     MATERIAL_AMBER(
         "Material You（ウォームアンバー）",
-        "全アプリを夜間でも目に優しい暖色アンバー単色アイコンに統一変換",
+        "夕暮れや夜間でも目に優しい暖色アンバー単色。ブルーライトと視覚刺激を抑えて休息を促します",
         0x2E2418,
         0xF5CBA7
     ),
     MATERIAL_ROSE(
         "Material You（ダスティローズ）",
-        "全アプリを彩度を抑えたスモーキーローズ単色アイコンに統一変換",
+        "彩度をグッと抑えたダスティローズ単色。過度な刺激を排した温かみのある画面を作ります",
         0x2E1E22,
         0xF2B8C6
     ),
     ORIGINAL(
         "オリジナル（無変換）",
-        "各アプリ本来のカラフルなアイコンをそのまま表示",
+        "各アプリ本来のカラフルなアイコンをそのまま表示（注意散漫になりやすい方は単色スタイルを推奨）",
         0x000000,
         0xFFFFFF
     )
 }
 
-class LauncherPreferences(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("adhd_launcher_prefs", Context.MODE_PRIVATE)
+class LauncherPreferences(private val prefs: SharedPreferences) {
+    constructor(context: Context) : this(
+        context.getSharedPreferences("adhd_launcher_prefs", Context.MODE_PRIVATE)
+    )
 
     private val _anchorText = MutableStateFlow(prefs.getString(KEY_ANCHOR_TEXT, "") ?: "")
     val anchorText: StateFlow<String> = _anchorText.asStateFlow()
@@ -454,13 +458,16 @@ class LauncherPreferences(context: Context) {
     }
 
     fun setMoveIconsDown(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_MOVE_ICONS_DOWN, enabled).apply()
-        _moveIconsDown.value = enabled
+        setStackFromBottom(enabled)
     }
 
     fun setStackFromBottom(enabled: Boolean) {
-        prefs.edit().putBoolean(KEY_STACK_FROM_BOTTOM, enabled).apply()
+        prefs.edit()
+            .putBoolean(KEY_STACK_FROM_BOTTOM, enabled)
+            .putBoolean(KEY_MOVE_ICONS_DOWN, enabled)
+            .apply()
         _stackFromBottom.value = enabled
+        _moveIconsDown.value = enabled
     }
 
     fun setCloseDrawerOnLaunch(enabled: Boolean) {
@@ -616,6 +623,154 @@ class LauncherPreferences(context: Context) {
         }
     }
 
+    fun reloadFromPreferences() {
+        _anchorText.value = prefs.getString(KEY_ANCHOR_TEXT, "") ?: ""
+        _displayMode.value = runCatching {
+            DisplayMode.valueOf(prefs.getString(KEY_DISPLAY_MODE, DisplayMode.AUTO_SCHEDULE.name) ?: DisplayMode.AUTO_SCHEDULE.name)
+        }.getOrDefault(DisplayMode.AUTO_SCHEDULE)
+        _handedness.value = runCatching {
+            Handedness.valueOf(prefs.getString(KEY_HANDEDNESS, Handedness.RIGHT.name) ?: Handedness.RIGHT.name)
+        }.getOrDefault(Handedness.RIGHT)
+        _clockPosition.value = runCatching {
+            ClockPosition.valueOf(prefs.getString(KEY_CLOCK_POSITION, ClockPosition.TOP_LARGE.name) ?: ClockPosition.TOP_LARGE.name)
+        }.getOrDefault(ClockPosition.TOP_LARGE)
+        _autoOpenKeyboard.value = prefs.getBoolean(KEY_AUTO_OPEN_KEYBOARD, false)
+        _showCategoryBar.value = prefs.getBoolean(KEY_SHOW_CATEGORY_BAR, true)
+        val stackBottom = prefs.getBoolean(KEY_STACK_FROM_BOTTOM, prefs.getBoolean(KEY_MOVE_ICONS_DOWN, true))
+        _stackFromBottom.value = stackBottom
+        _moveIconsDown.value = stackBottom
+        _closeDrawerOnLaunch.value = prefs.getBoolean(KEY_CLOSE_DRAWER_ON_LAUNCH, true)
+        _drawerSortOrder.value = runCatching {
+            DrawerSortOrder.valueOf(
+                prefs.getString(KEY_DRAWER_SORT_ORDER, DrawerSortOrder.USAGE_FREQUENCY.name)
+                    ?: DrawerSortOrder.USAGE_FREQUENCY.name
+            )
+        }.getOrDefault(DrawerSortOrder.USAGE_FREQUENCY)
+        _drawerColumns.value = prefs.getInt(KEY_DRAWER_COLUMNS, 4)
+        _searchProvider.value = runCatching {
+            SearchProvider.valueOf(
+                prefs.getString(KEY_SEARCH_PROVIDER, SearchProvider.GOOGLE.name)
+                    ?: SearchProvider.GOOGLE.name
+            )
+        }.getOrDefault(SearchProvider.GOOGLE)
+        _searchIncludeHiddenApps.value = prefs.getBoolean(KEY_SEARCH_INCLUDE_HIDDEN, false)
+        _searchStartAppsCount.value = prefs.getInt(KEY_SEARCH_START_APPS_COUNT, 4)
+        _searchWebSuggest.value = prefs.getBoolean(KEY_SEARCH_WEB_SUGGEST, true)
+        _searchPlayStore.value = prefs.getBoolean(KEY_SEARCH_PLAY_STORE, true)
+        _gestureSwipeUpDrawer.value = prefs.getBoolean(KEY_GESTURE_SWIPE_UP_DRAWER, true)
+        _gestureSwipeDownSearch.value = prefs.getBoolean(KEY_GESTURE_SWIPE_DOWN_SEARCH, true)
+        _gestureSwipeDownCloseDrawer.value = prefs.getBoolean(KEY_GESTURE_SWIPE_DOWN_CLOSE_DRAWER, true)
+        _gestureDoubleTapTrueBlack.value = prefs.getBoolean(KEY_GESTURE_DOUBLE_TAP_TRUE_BLACK, true)
+        _discoverMode.value = runCatching {
+            DiscoverMode.valueOf(
+                prefs.getString(KEY_DISCOVER_MODE, DiscoverMode.GOOGLE_APP.name)
+                    ?: DiscoverMode.GOOGLE_APP.name
+            )
+        }.getOrDefault(DiscoverMode.GOOGLE_APP)
+        _aiProviderType.value = runCatching {
+            AiProviderType.valueOf(
+                prefs.getString(KEY_AI_PROVIDER_TYPE, AiProviderType.GEMINI.name)
+                    ?: AiProviderType.GEMINI.name
+            )
+        }.getOrDefault(AiProviderType.GEMINI)
+        _aiApiKey.value = prefs.getString(KEY_AI_API_KEY, "") ?: ""
+        _aiBaseUrl.value = prefs.getString(KEY_AI_BASE_URL, AiProviderType.GEMINI.defaultEndpoint)
+            ?: AiProviderType.GEMINI.defaultEndpoint
+        _aiModelName.value = prefs.getString(KEY_AI_MODEL_NAME, AiProviderType.GEMINI.defaultModel)
+            ?: AiProviderType.GEMINI.defaultModel
+        _aiAutoCategorizeEnabled.value = prefs.getBoolean(KEY_AI_AUTO_CATEGORIZE, true)
+        _aiQuickAnswerEnabled.value = prefs.getBoolean(KEY_AI_QUICK_ANSWER, true)
+        _categoryCustomNames.value = loadCategoryCustomNames()
+        _hiddenCategories.value = loadHiddenCategories()
+        _categoryOrder.value = loadCategoryOrder()
+        _honeycombEnabled.value = prefs.getBoolean(KEY_HONEYCOMB_ENABLED, true)
+        _honeycombAppCount.value = prefs.getInt(KEY_HONEYCOMB_APP_COUNT, 7).coerceIn(3, 12)
+        _iconStyle.value = runCatching {
+            IconStyle.valueOf(
+                prefs.getString(KEY_ICON_STYLE, IconStyle.MONOCHROME.name)
+                    ?: IconStyle.MONOCHROME.name
+            )
+        }.getOrDefault(IconStyle.MONOCHROME)
+        _homeWidgetId.value = prefs.getInt(KEY_HOME_WIDGET_ID, -1)
+        _homeWidgetHeightDp.value = prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(80, 420)
+        _idleDimEnabled.value = prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
+    }
+
+    fun exportToJson(): String {
+        val json = JSONObject()
+        val all = prefs.all
+        for ((key, value) in all) {
+            if (key == KEY_LAST_UPDATE_CHECK_TIME) continue
+            when (value) {
+                is Boolean -> json.put(key, value)
+                is Int -> json.put(key, value)
+                is Long -> json.put(key, value)
+                is Float -> json.put(key, value.toDouble())
+                is String -> json.put(key, value)
+                is Set<*> -> {
+                    val array = JSONArray()
+                    value.forEach { array.put(it.toString()) }
+                    json.put(key, array)
+                }
+            }
+        }
+        return json.toString()
+    }
+
+    fun importFromJson(jsonString: String): Boolean {
+        if (jsonString.isBlank()) return false
+        return try {
+            val json = JSONObject(jsonString)
+            val keys = json.keys()
+            val validEntries = mutableListOf<Pair<String, Any>>()
+            var validKeyCount = 0
+
+            while (keys.hasNext()) {
+                val key = keys.next()
+                if (!key.startsWith("key_") && !key.startsWith("cat_label_")) {
+                    continue
+                }
+                if (key == KEY_LAST_UPDATE_CHECK_TIME) {
+                    continue
+                }
+                val value = json.opt(key) ?: continue
+                validKeyCount++
+                validEntries.add(key to value)
+            }
+
+            if (validKeyCount == 0) return false
+
+            val editor = prefs.edit()
+            for ((key, value) in validEntries) {
+                when (value) {
+                    is Boolean -> editor.putBoolean(key, value)
+                    is Number -> editor.putInt(key, value.toInt())
+                    is String -> editor.putString(key, value)
+                    is JSONArray -> {
+                        val set = mutableSetOf<String>()
+                        for (i in 0 until value.length()) {
+                            set.add(value.getString(i))
+                        }
+                        editor.putStringSet(key, set)
+                    }
+                }
+            }
+            editor.apply()
+            reloadFromPreferences()
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun getLastUpdateCheckTime(): Long {
+        return prefs.getLong(KEY_LAST_UPDATE_CHECK_TIME, 0L)
+    }
+
+    fun setLastUpdateCheckTime(time: Long) {
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_TIME, time).apply()
+    }
+
     companion object {
         private const val KEY_ANCHOR_TEXT = "key_anchor_text"
         private const val KEY_DISPLAY_MODE = "key_display_mode"
@@ -652,5 +807,6 @@ class LauncherPreferences(context: Context) {
         private const val KEY_HOME_WIDGET_ID = "key_home_widget_id"
         private const val KEY_HOME_WIDGET_HEIGHT_DP = "key_home_widget_height_dp"
         private const val KEY_IDLE_DIM_ENABLED = "key_idle_dim_enabled"
+        private const val KEY_LAST_UPDATE_CHECK_TIME = "key_last_update_check_time"
     }
 }

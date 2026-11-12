@@ -31,12 +31,15 @@ import com.example.adhdlauncher.ui.search.PullDownSearchScreen
 import com.example.adhdlauncher.ui.settings.SettingsPage
 import com.example.adhdlauncher.ui.settings.SettingsScreen
 import com.example.adhdlauncher.ui.theme.ADHDLauncherTheme
+import androidx.lifecycle.lifecycleScope
+import com.example.adhdlauncher.data.UpdateManager
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var appRepository: AppRepository
     private lateinit var preferences: LauncherPreferences
+    private lateinit var updateManager: UpdateManager
     private lateinit var appWidgetHost: AppWidgetHost
     private lateinit var appWidgetManager: AppWidgetManager
 
@@ -127,8 +130,14 @@ class MainActivity : ComponentActivity() {
 
         appRepository = AppRepository(this)
         preferences = LauncherPreferences(this)
+        updateManager = UpdateManager(this, preferences)
         appWidgetHost = AppWidgetHost(applicationContext, 1024)
         appWidgetManager = AppWidgetManager.getInstance(applicationContext)
+
+        // 24時間間隔でのバックグラウンド自動アップデート確認（Zero-tracking）
+        lifecycleScope.launch {
+            updateManager.checkForUpdates(force = false)
+        }
 
         // アプリのインストール・アンインストール・更新を自動検知してドロワーへ即時反映
         val filter = IntentFilter().apply {
@@ -146,6 +155,7 @@ class MainActivity : ComponentActivity() {
                 LauncherMain(
                     appRepository = appRepository,
                     preferences = preferences,
+                    updateManager = updateManager,
                     appWidgetHost = appWidgetHost,
                     appWidgetManager = appWidgetManager,
                     homePressTrigger = homePressTrigger,
@@ -190,6 +200,7 @@ class MainActivity : ComponentActivity() {
 fun LauncherMain(
     appRepository: AppRepository,
     preferences: LauncherPreferences,
+    updateManager: UpdateManager,
     appWidgetHost: AppWidgetHost,
     appWidgetManager: AppWidgetManager,
     homePressTrigger: Int,
@@ -360,6 +371,7 @@ fun LauncherMain(
                 apps = apps,
                 preferences = preferences,
                 initialPage = settingsInitialPage,
+                updateManager = updateManager,
                 onPickWidget = onPickWidget,
                 onRemoveWidget = onRemoveWidget,
                 onToggleAppHidden = { app, hidden ->
