@@ -2,6 +2,7 @@ package com.example.adhdlauncher.ui.home
 
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
+import android.annotation.SuppressLint
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -47,6 +48,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -66,6 +68,8 @@ import com.example.adhdlauncher.data.DiscoverMode
 import com.example.adhdlauncher.data.DisplayMode
 import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.LauncherPreferences
+import com.example.adhdlauncher.data.WidgetHorizontalAlignment
+import com.example.adhdlauncher.data.WidgetVerticalPosition
 import com.example.adhdlauncher.ui.util.HexagonShape
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -100,6 +104,15 @@ fun HomeScreen(
     val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
     val homeWidgetId by preferences.homeWidgetId.collectAsState()
     val homeWidgetHeightDp by preferences.homeWidgetHeightDp.collectAsState()
+    val homeWidgetWidthPercent by preferences.homeWidgetWidthPercent.collectAsState()
+    val homeWidgetVerticalPosition by preferences.homeWidgetVerticalPosition.collectAsState()
+    val homeWidgetHorizontalAlignment by preferences.homeWidgetHorizontalAlignment.collectAsState()
+    val homeWidgetVerticalOffsetDp by preferences.homeWidgetVerticalOffsetDp.collectAsState()
+    val homeWidgetBgAlphaPercent by preferences.homeWidgetBgAlphaPercent.collectAsState()
+    val homeWidgetCornerRadiusDp by preferences.homeWidgetCornerRadiusDp.collectAsState()
+    val homeWidgetPaddingDp by preferences.homeWidgetPaddingDp.collectAsState()
+    val homeWidgetScrollableTouch by preferences.homeWidgetScrollableTouch.collectAsState()
+    val showAnchorMemo by preferences.showAnchorMemo.collectAsState()
     val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
     val idleDimDelaySec by preferences.idleDimDelaySec.collectAsState()
     val idleDimAlphaPercent by preferences.idleDimAlphaPercent.collectAsState()
@@ -132,6 +145,11 @@ fun HomeScreen(
 
     var isEditingAnchor by remember { mutableStateOf(false) }
     var anchorInputText by remember { mutableStateOf("") }
+    LaunchedEffect(showAnchorMemo) {
+        if (!showAnchorMemo) {
+            isEditingAnchor = false
+        }
+    }
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
@@ -172,6 +190,24 @@ fun HomeScreen(
     )
 
     val backgroundColor = if (isTrueBlack) Color.Black else Color.Transparent
+
+    @Composable
+    fun HomeWidgetSlot() {
+        HomeWidgetContainer(
+            appWidgetId = homeWidgetId,
+            widgetHeightDp = homeWidgetHeightDp,
+            widthPercent = homeWidgetWidthPercent,
+            horizontalAlignment = homeWidgetHorizontalAlignment,
+            verticalOffsetDp = homeWidgetVerticalOffsetDp,
+            bgAlphaPercent = homeWidgetBgAlphaPercent,
+            cornerRadiusDp = homeWidgetCornerRadiusDp,
+            paddingDp = homeWidgetPaddingDp,
+            scrollableTouch = homeWidgetScrollableTouch,
+            appWidgetHost = appWidgetHost,
+            appWidgetManager = appWidgetManager,
+            onInvalidWidget = { preferences.setHomeWidgetId(-1) }
+        )
+    }
 
     Box(
         modifier = modifier
@@ -295,15 +331,23 @@ fun HomeScreen(
                 )
             }
 
-            // ホーム画面ウィジェット（KWGT / 時計 / At a Glance 等）
-            if (homeWidgetId != -1) {
-                HomeWidgetContainer(
-                    appWidgetId = homeWidgetId,
-                    widgetHeightDp = homeWidgetHeightDp,
-                    appWidgetHost = appWidgetHost,
-                    appWidgetManager = appWidgetManager,
-                    onInvalidWidget = { preferences.setHomeWidgetId(-1) }
-                )
+            // ホーム画面ウィジェット（上部配置）
+            if (homeWidgetId != -1 && homeWidgetVerticalPosition == WidgetVerticalPosition.TOP) {
+                HomeWidgetSlot()
+            }
+        }
+
+        // ホーム画面ウィジェット（中央配置）
+        if (homeWidgetId != -1 && homeWidgetVerticalPosition == WidgetVerticalPosition.CENTER) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .fillMaxWidth()
+                    .systemBarsPadding()
+                    .padding(horizontal = 20.dp)
+                    .alpha(uiAlpha)
+            ) {
+                HomeWidgetSlot()
             }
         }
 
@@ -340,86 +384,94 @@ fun HomeScreen(
                 }
             }
 
+            // ホーム画面ウィジェット（下部配置）
+            if (homeWidgetId != -1 && homeWidgetVerticalPosition == WidgetVerticalPosition.BOTTOM) {
+                HomeWidgetSlot()
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // 2. 1行アンカー（Anti-Dopamine Anchor: 今やることメモ）
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = Color.Black.copy(alpha = 0.62f),
-                contentColor = Color.White,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            ) {
-                Row(
+            if (showAnchorMemo) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color.Black.copy(alpha = 0.62f),
+                    contentColor = Color.White,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(bottom = 12.dp)
                 ) {
-                    if (isEditingAnchor) {
-                        BasicTextField(
-                            value = anchorInputText,
-                            onValueChange = { anchorInputText = it },
-                            singleLine = true,
-                            textStyle = TextStyle(
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Medium
-                            ),
-                            cursorBrush = SolidColor(Color.White),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                            keyboardActions = KeyboardActions(onDone = {
-                                preferences.updateAnchorText(anchorInputText)
-                                isEditingAnchor = false
-                                focusManager.clearFocus()
-                            }),
-                            modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(focusRequester)
-                        )
-                        LaunchedEffect(Unit) {
-                            focusRequester.requestFocus()
-                        }
-                        IconButton(
-                            onClick = {
-                                preferences.updateAnchorText(anchorInputText)
-                                isEditingAnchor = false
-                                focusManager.clearFocus()
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Check,
-                                contentDescription = "確定",
-                                tint = Color(0xFF81C784)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isEditingAnchor) {
+                            BasicTextField(
+                                value = anchorInputText,
+                                onValueChange = { anchorInputText = it },
+                                singleLine = true,
+                                textStyle = TextStyle(
+                                    color = Color.White,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Medium
+                                ),
+                                cursorBrush = SolidColor(Color.White),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = {
+                                    preferences.updateAnchorText(anchorInputText)
+                                    isEditingAnchor = false
+                                    focusManager.clearFocus()
+                                }),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(focusRequester)
                             )
-                        }
-                    } else {
-                        val hasAnchor = anchorText.isNotBlank()
-                        Text(
-                            text = if (hasAnchor) anchorText else "＋ 今スマホを開いた目的をメモ...",
-                            fontSize = 15.sp,
-                            fontWeight = if (hasAnchor) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (hasAnchor) Color.White else Color.White.copy(alpha = 0.65f),
-                            modifier = Modifier
-                                .weight(1f)
-                                .combinedClickable(
-                                    onClick = {
-                                        honeycombCenter = null
-                                        anchorInputText = anchorText
-                                        isEditingAnchor = true
-                                    }
-                                )
-                        )
-                        if (hasAnchor) {
+                            LaunchedEffect(Unit) {
+                                focusRequester.requestFocus()
+                            }
                             IconButton(
-                                onClick = { preferences.clearAnchorText() },
+                                onClick = {
+                                    preferences.updateAnchorText(anchorInputText)
+                                    isEditingAnchor = false
+                                    focusManager.clearFocus()
+                                },
                                 modifier = Modifier.size(28.dp)
                             ) {
                                 Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = "完了・消去",
-                                    tint = Color.White.copy(alpha = 0.65f)
+                                    Icons.Default.Check,
+                                    contentDescription = "確定",
+                                    tint = Color(0xFF81C784)
                                 )
+                            }
+                        } else {
+                            val hasAnchor = anchorText.isNotBlank()
+                            Text(
+                                text = if (hasAnchor) anchorText else "＋ 今スマホを開いた目的をメモ...",
+                                fontSize = 15.sp,
+                                fontWeight = if (hasAnchor) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (hasAnchor) Color.White else Color.White.copy(alpha = 0.65f),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .combinedClickable(
+                                        onClick = {
+                                            honeycombCenter = null
+                                            anchorInputText = anchorText
+                                            isEditingAnchor = true
+                                        }
+                                    )
+                            )
+                            if (hasAnchor) {
+                                IconButton(
+                                    onClick = { preferences.clearAnchorText() },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "完了・消去",
+                                        tint = Color.White.copy(alpha = 0.65f)
+                                    )
+                                }
                             }
                         }
                     }
@@ -708,15 +760,23 @@ private fun FanHoneycombPopupOverlay(
     }
 }
 
+@SuppressLint("ClickableViewAccessibility")
 @Composable
 private fun HomeWidgetContainer(
     appWidgetId: Int,
     widgetHeightDp: Int,
+    widthPercent: Int,
+    horizontalAlignment: WidgetHorizontalAlignment,
+    verticalOffsetDp: Int,
+    bgAlphaPercent: Int,
+    cornerRadiusDp: Int,
+    paddingDp: Int,
+    scrollableTouch: Boolean,
     appWidgetHost: AppWidgetHost,
     appWidgetManager: AppWidgetManager,
     onInvalidWidget: () -> Unit
 ) {
-    val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val providerInfo = remember(appWidgetId) {
         try {
             appWidgetManager.getAppWidgetInfo(appWidgetId)
@@ -732,35 +792,64 @@ private fun HomeWidgetContainer(
         return
     }
 
-    AndroidView(
-        factory = { ctx ->
-            appWidgetHost.createView(ctx.applicationContext, appWidgetId, providerInfo).apply {
-                setAppWidget(appWidgetId, providerInfo)
-                val options = Bundle().apply {
-                    putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320)
-                    putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 400)
-                    putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, widgetHeightDp)
-                    putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, widgetHeightDp)
-                }
-                try {
-                    updateAppWidgetOptions(options)
-                } catch (_: Exception) {}
-            }
-        },
-        update = { hostView ->
-            val options = Bundle().apply {
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 400)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, widgetHeightDp)
-                putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, widgetHeightDp)
-            }
-            try {
-                hostView.updateAppWidgetOptions(options)
-            } catch (_: Exception) {}
-        },
+    val effectiveWidthDp = remember(configuration.screenWidthDp, widthPercent, paddingDp) {
+        (((configuration.screenWidthDp - 40).coerceAtLeast(160) * widthPercent / 100f).roundToInt() - paddingDp * 2)
+            .coerceAtLeast(80)
+    }
+    val effectiveHeightDp = (widgetHeightDp - paddingDp * 2).coerceAtLeast(48)
+
+    val boxAlignment = when (horizontalAlignment) {
+        WidgetHorizontalAlignment.START -> Alignment.CenterStart
+        WidgetHorizontalAlignment.CENTER -> Alignment.Center
+        WidgetHorizontalAlignment.END -> Alignment.CenterEnd
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(widgetHeightDp.dp)
-            .clip(RoundedCornerShape(16.dp))
-    )
+            .offset(y = verticalOffsetDp.dp),
+        contentAlignment = boxAlignment
+    ) {
+        AndroidView(
+            factory = { ctx ->
+                appWidgetHost.createView(ctx.applicationContext, appWidgetId, providerInfo).apply {
+                    setAppWidget(appWidgetId, providerInfo)
+                    val options = Bundle().apply {
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, effectiveWidthDp)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, effectiveWidthDp)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, effectiveHeightDp)
+                        putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, effectiveHeightDp)
+                    }
+                    try {
+                        updateAppWidgetOptions(options)
+                    } catch (_: Exception) {}
+                    setOnTouchListener { v, _ ->
+                        v.parent?.requestDisallowInterceptTouchEvent(scrollableTouch)
+                        false
+                    }
+                }
+            },
+            update = { hostView ->
+                val options = Bundle().apply {
+                    putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, effectiveWidthDp)
+                    putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, effectiveWidthDp)
+                    putInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, effectiveHeightDp)
+                    putInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, effectiveHeightDp)
+                }
+                try {
+                    hostView.updateAppWidgetOptions(options)
+                } catch (_: Exception) {}
+                hostView.setOnTouchListener { v, _ ->
+                    v.parent?.requestDisallowInterceptTouchEvent(scrollableTouch)
+                    false
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth(widthPercent / 100f)
+                .height(widgetHeightDp.dp)
+                .clip(RoundedCornerShape(cornerRadiusDp.dp))
+                .background(Color.Black.copy(alpha = bgAlphaPercent / 100f))
+                .padding(paddingDp.dp)
+        )
+    }
 }

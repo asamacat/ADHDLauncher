@@ -1,5 +1,6 @@
 package com.example.adhdlauncher.ui.settings
 
+import android.appwidget.AppWidgetManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -101,6 +102,8 @@ import com.example.adhdlauncher.data.Handedness
 import com.example.adhdlauncher.data.IconStyle
 import com.example.adhdlauncher.data.LauncherPreferences
 import com.example.adhdlauncher.data.SearchProvider
+import com.example.adhdlauncher.data.WidgetHorizontalAlignment
+import com.example.adhdlauncher.data.WidgetVerticalPosition
 import com.example.adhdlauncher.ui.util.HexagonShape
 
 enum class SettingsPage {
@@ -127,6 +130,7 @@ fun SettingsScreen(
     initialPage: SettingsPage = SettingsPage.ROOT,
     updateManager: UpdateManager? = null,
     onPickWidget: () -> Unit = {},
+    onConfigureWidget: () -> Unit = {},
     onRemoveWidget: () -> Unit = {},
     onToggleAppHidden: (AppInfo, Boolean) -> Unit,
     onResetUsageHistory: () -> Unit,
@@ -180,10 +184,12 @@ fun SettingsScreen(
                     apps = apps,
                     preferences = preferences,
                     onPickWidget = onPickWidget,
+                    onConfigureWidget = onConfigureWidget,
                     onRemoveWidget = onRemoveWidget,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
                 SettingsPage.APPEARANCE -> AppearanceSettingsView(
+                    apps = apps,
                     preferences = preferences,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
@@ -1597,11 +1603,13 @@ private fun HomeSettingsView(
     apps: List<AppInfo>,
     preferences: LauncherPreferences,
     onPickWidget: () -> Unit,
+    onConfigureWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val clockPosition by preferences.clockPosition.collectAsState()
+    val showAnchorMemo by preferences.showAnchorMemo.collectAsState()
     val honeycombEnabled by preferences.honeycombEnabled.collectAsState()
     val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
     val honeycombInnerRadiusDp by preferences.honeycombInnerRadiusDp.collectAsState()
@@ -1609,9 +1617,30 @@ private fun HomeSettingsView(
     val pinnedHoneycombPackages by preferences.pinnedHoneycombPackages.collectAsState()
     val homeWidgetId by preferences.homeWidgetId.collectAsState()
     val homeWidgetHeightDp by preferences.homeWidgetHeightDp.collectAsState()
+    val homeWidgetWidthPercent by preferences.homeWidgetWidthPercent.collectAsState()
+    val homeWidgetVerticalPosition by preferences.homeWidgetVerticalPosition.collectAsState()
+    val homeWidgetHorizontalAlignment by preferences.homeWidgetHorizontalAlignment.collectAsState()
+    val homeWidgetVerticalOffsetDp by preferences.homeWidgetVerticalOffsetDp.collectAsState()
+    val homeWidgetBgAlphaPercent by preferences.homeWidgetBgAlphaPercent.collectAsState()
+    val homeWidgetCornerRadiusDp by preferences.homeWidgetCornerRadiusDp.collectAsState()
+    val homeWidgetPaddingDp by preferences.homeWidgetPaddingDp.collectAsState()
+    val homeWidgetScrollableTouch by preferences.homeWidgetScrollableTouch.collectAsState()
     val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
     val idleDimDelaySec by preferences.idleDimDelaySec.collectAsState()
     val idleDimAlphaPercent by preferences.idleDimAlphaPercent.collectAsState()
+
+    val activeWidgetLabel = remember(homeWidgetId) {
+        if (homeWidgetId == -1) {
+            null
+        } else {
+            try {
+                val info = AppWidgetManager.getInstance(context).getAppWidgetInfo(homeWidgetId)
+                info?.loadLabel(context.packageManager)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 
     var showPinnedAppsDialog by remember { mutableStateOf(false) }
     var pinnedSearchQuery by remember { mutableStateOf("") }
@@ -1721,7 +1750,28 @@ private fun HomeSettingsView(
             modifier = Modifier.padding(vertical = 12.dp)
         )
 
-        // 2. ウィジェット配置（KWGT / 時計 / カレンダー等）
+        // 2. 今スマホを開いた目的メモ（アンカー）の表示 ON/OFF
+        Text(
+            text = "目的メモ（アンカー）",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        CleanSwitchRow(
+            title = "「今スマホを開いた目的メモ」を表示",
+            subtitle = "ホーム画面下部に1行の目的メモ欄を表示します（オフにすると非表示になりスッキリします）",
+            checked = showAnchorMemo,
+            onCheckedChange = { preferences.setShowAnchorMemo(it) }
+        )
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        // 3. ウィジェット配置・詳細カスタマイズ（一般的なホームアプリ並み）
         Text(
             text = "ホーム画面ウィジェット（KWGT・時計・予定等）",
             fontSize = 13.sp,
@@ -1732,18 +1782,19 @@ private fun HomeSettingsView(
 
         Text(
             text = if (homeWidgetId != -1) {
-                "現在ウィジェットが配置されています（ID: $homeWidgetId）"
+                val labelText = if (!activeWidgetLabel.isNullOrBlank()) "$activeWidgetLabel " else ""
+                "配置中: ${labelText}(ID: $homeWidgetId)"
             } else {
-                "KWGT や Google At a Glance、カレンダー等のウィジェットを1つホーム画面に配置できます。"
+                "KWGT や Google At a Glance、カレンダー等のウィジェットを配置し、位置・幅・高さ・背景を細かく調整できます。"
             },
             fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.65f),
+            color = Color.White.copy(alpha = 0.7f),
             modifier = Modifier.padding(bottom = 10.dp)
         )
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
                 onClick = onPickWidget,
@@ -1757,31 +1808,208 @@ private fun HomeSettingsView(
                 Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (homeWidgetId == -1) "ウィジェットを選択" else "ウィジェットを変更",
+                    text = if (homeWidgetId == -1) "ウィジェットを選択" else "変更",
                     fontWeight = FontWeight.Bold
                 )
             }
 
             if (homeWidgetId != -1) {
                 OutlinedButton(
-                    onClick = onRemoveWidget,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(0.7f)
+                    onClick = onConfigureWidget,
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("削除", color = Color(0xFFEF9A9A))
+                    Text("内部設定", color = AccentCyan, fontSize = 13.sp)
+                }
+
+                OutlinedButton(
+                    onClick = onRemoveWidget,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("削除", color = Color(0xFFEF9A9A), fontSize = 13.sp)
                 }
             }
         }
 
         if (homeWidgetId != -1) {
-            Spacer(modifier = Modifier.height(10.dp))
-            NumericStepperRow(
-                title = "ウィジェットの高さ (${homeWidgetHeightDp}dp)",
-                subtitle = "80〜420dp（20dp刻み）",
-                valueText = "${homeWidgetHeightDp}dp",
-                onDecrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp - 20) },
-                onIncrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp + 20) }
-            )
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF14161B),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+                    Text(
+                        text = "配置エリア（縦位置）",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentCyan
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WidgetVerticalPosition.values().forEach { pos ->
+                            val selected = (homeWidgetVerticalPosition == pos)
+                            val shortTitle = when (pos) {
+                                WidgetVerticalPosition.TOP -> "上部"
+                                WidgetVerticalPosition.CENTER -> "中央"
+                                WidgetVerticalPosition.BOTTOM -> "下部"
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (selected) AccentSage.copy(alpha = 0.24f) else Color(0xFF1D2028),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) AccentSage else Color.White.copy(alpha = 0.1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable { preferences.setHomeWidgetVerticalPosition(pos) }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = shortTitle,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Text(
+                        text = "水平揃え（横位置）",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentCyan
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        WidgetHorizontalAlignment.values().forEach { align ->
+                            val selected = (homeWidgetHorizontalAlignment == align)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (selected) AccentCyan.copy(alpha = 0.2f) else Color(0xFF1D2028),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .border(
+                                        width = if (selected) 1.5.dp else 1.dp,
+                                        color = if (selected) AccentCyan else Color.White.copy(alpha = 0.1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .clickable { preferences.setHomeWidgetHorizontalAlignment(align) }
+                            ) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 10.dp)
+                                ) {
+                                    Text(
+                                        text = align.label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier.padding(vertical = 10.dp)
+                    )
+
+                    NumericStepperRow(
+                        title = "ウィジェット幅 (${homeWidgetWidthPercent}%)",
+                        subtitle = "横幅の割合（40〜100%、5%刻み）",
+                        valueText = "${homeWidgetWidthPercent}%",
+                        onDecrement = { preferences.setHomeWidgetWidthPercent(homeWidgetWidthPercent - 5) },
+                        onIncrement = { preferences.setHomeWidgetWidthPercent(homeWidgetWidthPercent + 5) }
+                    )
+
+                    NumericStepperRow(
+                        title = "ウィジェット高さ (${homeWidgetHeightDp}dp)",
+                        subtitle = "高さ調整（60〜520dp、10dp刻み）",
+                        valueText = "${homeWidgetHeightDp}dp",
+                        onDecrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp - 10) },
+                        onIncrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp + 10) }
+                    )
+
+                    NumericStepperRow(
+                        title = "上下位置の微調整 (${if (homeWidgetVerticalOffsetDp >= 0) "+$homeWidgetVerticalOffsetDp" else "$homeWidgetVerticalOffsetDp"}dp)",
+                        subtitle = "縦位置の細かいオフセット（-120〜+200dp）",
+                        valueText = "${homeWidgetVerticalOffsetDp}dp",
+                        onDecrement = { preferences.setHomeWidgetVerticalOffsetDp(homeWidgetVerticalOffsetDp - 8) },
+                        onIncrement = { preferences.setHomeWidgetVerticalOffsetDp(homeWidgetVerticalOffsetDp + 8) }
+                    )
+
+                    HorizontalDivider(
+                        color = Color.White.copy(alpha = 0.08f),
+                        modifier = Modifier.padding(vertical = 6.dp)
+                    )
+
+                    NumericStepperRow(
+                        title = "背景カードの濃さ (${homeWidgetBgAlphaPercent}%)",
+                        subtitle = "0%は完全透過、値を上げると半透明カードになります（0〜85%）",
+                        valueText = "${homeWidgetBgAlphaPercent}%",
+                        onDecrement = { preferences.setHomeWidgetBgAlphaPercent(homeWidgetBgAlphaPercent - 5) },
+                        onIncrement = { preferences.setHomeWidgetBgAlphaPercent(homeWidgetBgAlphaPercent + 5) }
+                    )
+
+                    NumericStepperRow(
+                        title = "角丸半径 (${homeWidgetCornerRadiusDp}dp)",
+                        subtitle = "ウィジェット枠の角丸（0〜36dp）",
+                        valueText = "${homeWidgetCornerRadiusDp}dp",
+                        onDecrement = { preferences.setHomeWidgetCornerRadiusDp(homeWidgetCornerRadiusDp - 4) },
+                        onIncrement = { preferences.setHomeWidgetCornerRadiusDp(homeWidgetCornerRadiusDp + 4) }
+                    )
+
+                    NumericStepperRow(
+                        title = "内側余白 (${homeWidgetPaddingDp}dp)",
+                        subtitle = "枠の内側の余白（0〜24dp）",
+                        valueText = "${homeWidgetPaddingDp}dp",
+                        onDecrement = { preferences.setHomeWidgetPaddingDp(homeWidgetPaddingDp - 2) },
+                        onIncrement = { preferences.setHomeWidgetPaddingDp(homeWidgetPaddingDp + 2) }
+                    )
+
+                    CleanSwitchRow(
+                        title = "ウィジェット内スクロール優先",
+                        subtitle = "カレンダー予定やメモなどの縦スクロール時にホームのスワイプ誤爆を防ぎます",
+                        checked = homeWidgetScrollableTouch,
+                        onCheckedChange = { preferences.setHomeWidgetScrollableTouch(it) }
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    TextButton(
+                        onClick = {
+                            preferences.resetHomeWidgetAppearance()
+                            Toast.makeText(context, "ウィジェット見た目設定を標準に戻しました", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            text = "ウィジェット見た目設定を標準に戻す",
+                            fontSize = 12.sp,
+                            color = AccentSage,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
         }
 
         HorizontalDivider(
@@ -1789,7 +2017,7 @@ private fun HomeSettingsView(
             modifier = Modifier.padding(vertical = 12.dp)
         )
 
-        // 3. 無操作時の半透明化（Idle Dimming）
+        // 4. 無操作時の半透明化（Idle Dimming）
         Text(
             text = "視覚ノイズ低減・省電力",
             fontSize = 13.sp,
@@ -1828,7 +2056,7 @@ private fun HomeSettingsView(
             modifier = Modifier.padding(vertical = 12.dp)
         )
 
-        // 4. 時計の表示位置
+        // 5. 時計の表示位置
         Text(
             text = "内蔵時計の表示位置",
             fontSize = 13.sp,
@@ -1968,6 +2196,7 @@ private fun HomeSettingsView(
 
 @Composable
 private fun AppearanceSettingsView(
+    apps: List<AppInfo>,
     preferences: LauncherPreferences,
     onBack: () -> Unit
 ) {
@@ -1975,6 +2204,10 @@ private fun AppearanceSettingsView(
     val iconStyle by preferences.iconStyle.collectAsState()
     val scheduleStartHour by preferences.scheduleStartHour.collectAsState()
     val scheduleEndHour by preferences.scheduleEndHour.collectAsState()
+
+    val previewApps = remember(apps) {
+        apps.filter { !it.isHidden }.take(4)
+    }
 
     Column(
         modifier = Modifier
@@ -1985,55 +2218,286 @@ private fun AppearanceSettingsView(
         SubPageHeader(title = "外観と省電力", onBack = onBack)
 
         Text(
-            text = "アプリアイコンのカラー変換（Material You・標準モノクロ）",
+            text = "アプリアイコンのカラー変換",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
-            modifier = Modifier.padding(vertical = 10.dp)
+            modifier = Modifier.padding(vertical = 8.dp)
         )
 
-        // 六角形カラースウォッチバー（ワンタップで色を切り替え可能）
-        Row(
+        // 1. 実アプリのライブプレビューカード
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF101216),
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(16.dp))
         ) {
-            IconStyle.values().forEach { style ->
-                val isSelected = (iconStyle == style)
-                val bgColor = if (style == IconStyle.ORIGINAL) Color(0xFF2B2D35) else Color((0xFF000000L) or style.bgHex.toLong())
-                val fgColor = if (style == IconStyle.ORIGINAL) AccentCyan else Color((0xFF000000L) or style.fgHex.toLong())
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(HexagonShape)
-                        .background(bgColor)
-                        .border(
-                            width = if (isSelected) 2.5.dp else 1.dp,
-                            color = if (isSelected) Color.White else fgColor.copy(alpha = 0.45f),
-                            shape = HexagonShape
-                        )
-                        .clickable { preferences.setIconStyle(style) },
-                    contentAlignment = Alignment.Center
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .clip(HexagonShape)
-                            .background(fgColor)
+                    Text(
+                        text = "現在の適用イメージ",
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.55f)
                     )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = AccentSage.copy(alpha = 0.2f)
+                    ) {
+                        Text(
+                            text = iconStyle.shortLabel,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentSage,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    if (previewApps.isNotEmpty()) {
+                        previewApps.forEach { app ->
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.width(64.dp)
+                            ) {
+                                val bmp = app.iconBitmap
+                                if (bmp != null) {
+                                    Image(
+                                        bitmap = bmp,
+                                        contentDescription = app.label,
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(HexagonShape)
+                                    )
+                                } else {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(46.dp)
+                                            .clip(HexagonShape)
+                                            .background(Color(0xFF282B33)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = app.label.take(1),
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = app.label,
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "アイコンスタイルをタップすると一覧・ハニカム全体へ即座に反映されます",
+                            fontSize = 12.sp,
+                            color = Color.White.copy(alpha = 0.5f)
+                        )
+                    }
                 }
             }
         }
 
-        IconStyle.values().forEach { style ->
-            CleanRadioRow(
-                title = style.label,
-                subtitle = style.description,
-                selected = (iconStyle == style),
-                onClick = { preferences.setIconStyle(style) }
-            )
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // 2. 最上段：オリジナル（標準・カラー）フル幅カード
+        val isOriginalSelected = (iconStyle == IconStyle.ORIGINAL)
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = if (isOriginalSelected) Color(0xFF1F242D) else Color(0xFF14161B),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    width = if (isOriginalSelected) 2.dp else 1.dp,
+                    color = if (isOriginalSelected) AccentCyan else Color.White.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(14.dp)
+                )
+                .clickable { preferences.setIconStyle(IconStyle.ORIGINAL) }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // オリジナルを表すマルチカラー六角形バッジ
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(HexagonShape)
+                        .background(Color(0xFF232732))
+                        .border(1.5.dp, Color.White.copy(alpha = 0.25f), HexagonShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFEF5350)))
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFFFFCA28)))
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF66BB6A)))
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF42A5F5)))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = IconStyle.ORIGINAL.label,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = Color.White.copy(alpha = 0.12f)
+                        ) {
+                            Text(
+                                text = "無変換",
+                                fontSize = 10.sp,
+                                color = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(3.dp))
+                    Text(
+                        text = IconStyle.ORIGINAL.description,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        lineHeight = 16.sp
+                    )
+                }
+                RadioButton(
+                    selected = isOriginalSelected,
+                    onClick = { preferences.setIconStyle(IconStyle.ORIGINAL) },
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = AccentCyan,
+                        unselectedColor = Color.White.copy(alpha = 0.4f)
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        Text(
+            text = "Material You 単色トーン変換（視覚刺激の抑制）",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color.White.copy(alpha = 0.6f),
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // 3. 2列パレットカードグリッド（MONOCHROME〜ROSE の6スタイル）
+        val materialStyles = IconStyle.values().filter { it != IconStyle.ORIGINAL }
+        materialStyles.chunked(2).forEach { rowStyles ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowStyles.forEach { style ->
+                    val isSelected = (iconStyle == style)
+                    val bgColor = Color((0xFF000000L) or style.bgHex.toLong())
+                    val fgColor = Color((0xFF000000L) or style.fgHex.toLong())
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) Color(0xFF1F242D) else Color(0xFF14161B),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 114.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) fgColor else Color.White.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(14.dp)
+                            )
+                            .clickable { preferences.setIconStyle(style) }
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(34.dp)
+                                        .clip(HexagonShape)
+                                        .background(bgColor)
+                                        .border(1.dp, fgColor.copy(alpha = 0.55f), HexagonShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(14.dp)
+                                            .clip(HexagonShape)
+                                            .background(fgColor)
+                                    )
+                                }
+                                if (isSelected) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = fgColor.copy(alpha = 0.2f)
+                                    ) {
+                                        Text(
+                                            text = "適用中",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = fgColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = style.label,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = style.description,
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.55f),
+                                lineHeight = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         HorizontalDivider(

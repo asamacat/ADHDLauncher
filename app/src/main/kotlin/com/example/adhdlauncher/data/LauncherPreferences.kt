@@ -58,52 +58,72 @@ enum class DiscoverMode(val label: String, val description: String) {
 
 enum class IconStyle(
     val label: String,
+    val shortLabel: String,
     val description: String,
     val bgHex: Int,
     val fgHex: Int
 ) {
+    ORIGINAL(
+        "オリジナル（標準・カラー）",
+        "オリジナル",
+        "各アプリ本来のカラフルなアイコンをそのまま表示します",
+        0x000000,
+        0xFFFFFF
+    ),
     MONOCHROME(
-        "Material You（モノクローム・標準）",
-        "全アプリを完全な白黒・グレー単色に統一。鮮烈な色彩による衝動的タップやドーパミン過剰刺激を最小化します",
+        "モノクローム（無彩色）",
+        "モノクロ",
+        "白黒・グレー単色に統一し、色彩による視覚刺激を最小化",
         0x1E1F22,
         0xE2E4E8
     ),
     MATERIAL_SAGE(
-        "Material You（セージグリーン）",
-        "穏やかなセージグリーン単色アイコンに統一変換。視覚的な緊張をほぐし、落ち着いた集中状態を保ちます",
+        "セージグリーン",
+        "セージ",
+        "落ち着いたセージグリーンで視覚的な緊張をほぐす",
         0x232B22,
         0xB8CCAE
     ),
     MATERIAL_CYAN(
-        "Material You（シアンブルー）",
-        "知的なシアンブルー単色アイコンに統一変換。頭を冷静にクールダウンし、衝動的な情報過多を防ぎます",
+        "シアンブルー",
+        "シアン",
+        "知的なシアンブルーで頭を冷静にクールダウン",
         0x182430,
         0x90CAF9
     ),
     MATERIAL_LAVENDER(
-        "Material You（ラベンダー）",
-        "やわらかなラベンダーパープル単色アイコンに統一変換。不安感やタスク切り替え時の焦りを和らげます",
+        "ラベンダー",
+        "ラベンダー",
+        "やわらかなラベンダーで不安感や焦りを和らげる",
         0x252030,
         0xCEB8F5
     ),
     MATERIAL_AMBER(
-        "Material You（ウォームアンバー）",
-        "夕暮れや夜間でも目に優しい暖色アンバー単色。ブルーライトと視覚刺激を抑えて休息を促します",
+        "ウォームアンバー",
+        "アンバー",
+        "夜間でも目に優しい暖色アンバーで休息を促す",
         0x2E2418,
         0xF5CBA7
     ),
     MATERIAL_ROSE(
-        "Material You（ダスティローズ）",
-        "彩度をグッと抑えたダスティローズ単色。過度な刺激を排した温かみのある画面を作ります",
+        "ダスティローズ",
+        "ローズ",
+        "彩度を抑えたスモーキーローズで穏やかな画面に",
         0x2E1E22,
         0xF2B8C6
-    ),
-    ORIGINAL(
-        "オリジナル（無変換）",
-        "各アプリ本来のカラフルなアイコンをそのまま表示（注意散漫になりやすい方は単色スタイルを推奨）",
-        0x000000,
-        0xFFFFFF
     )
+}
+
+enum class WidgetVerticalPosition(val label: String, val description: String) {
+    TOP("上部（時計の下）", "画面上部の時計エリア直下に配置"),
+    CENTER("中央エリア", "ホーム画面の中央付近に配置"),
+    BOTTOM("下部（目的メモ・検索バーの上）", "親指が届きやすい画面下部エリアに配置")
+}
+
+enum class WidgetHorizontalAlignment(val label: String) {
+    START("左寄せ"),
+    CENTER("中央揃え"),
+    END("右寄せ")
 }
 
 class LauncherPreferences(private val prefs: SharedPreferences) {
@@ -310,9 +330,64 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     val homeWidgetId: StateFlow<Int> = _homeWidgetId.asStateFlow()
 
     private val _homeWidgetHeightDp = MutableStateFlow(
-        prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(80, 420)
+        prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(60, 520)
     )
     val homeWidgetHeightDp: StateFlow<Int> = _homeWidgetHeightDp.asStateFlow()
+
+    private val _showAnchorMemo = MutableStateFlow(
+        prefs.getBoolean(KEY_SHOW_ANCHOR_MEMO, true)
+    )
+    val showAnchorMemo: StateFlow<Boolean> = _showAnchorMemo.asStateFlow()
+
+    private val _homeWidgetWidthPercent = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_WIDTH_PERCENT, 100).coerceIn(40, 100)
+    )
+    val homeWidgetWidthPercent: StateFlow<Int> = _homeWidgetWidthPercent.asStateFlow()
+
+    private val _homeWidgetVerticalPosition = MutableStateFlow(
+        runCatching {
+            WidgetVerticalPosition.valueOf(
+                prefs.getString(KEY_HOME_WIDGET_VERTICAL_POS, WidgetVerticalPosition.TOP.name)
+                    ?: WidgetVerticalPosition.TOP.name
+            )
+        }.getOrDefault(WidgetVerticalPosition.TOP)
+    )
+    val homeWidgetVerticalPosition: StateFlow<WidgetVerticalPosition> = _homeWidgetVerticalPosition.asStateFlow()
+
+    private val _homeWidgetHorizontalAlignment = MutableStateFlow(
+        runCatching {
+            WidgetHorizontalAlignment.valueOf(
+                prefs.getString(KEY_HOME_WIDGET_HORIZONTAL_ALIGN, WidgetHorizontalAlignment.CENTER.name)
+                    ?: WidgetHorizontalAlignment.CENTER.name
+            )
+        }.getOrDefault(WidgetHorizontalAlignment.CENTER)
+    )
+    val homeWidgetHorizontalAlignment: StateFlow<WidgetHorizontalAlignment> = _homeWidgetHorizontalAlignment.asStateFlow()
+
+    private val _homeWidgetVerticalOffsetDp = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_VERTICAL_OFFSET_DP, 0).coerceIn(-120, 200)
+    )
+    val homeWidgetVerticalOffsetDp: StateFlow<Int> = _homeWidgetVerticalOffsetDp.asStateFlow()
+
+    private val _homeWidgetBgAlphaPercent = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_BG_ALPHA_PERCENT, 0).coerceIn(0, 85)
+    )
+    val homeWidgetBgAlphaPercent: StateFlow<Int> = _homeWidgetBgAlphaPercent.asStateFlow()
+
+    private val _homeWidgetCornerRadiusDp = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_CORNER_RADIUS_DP, 16).coerceIn(0, 36)
+    )
+    val homeWidgetCornerRadiusDp: StateFlow<Int> = _homeWidgetCornerRadiusDp.asStateFlow()
+
+    private val _homeWidgetPaddingDp = MutableStateFlow(
+        prefs.getInt(KEY_HOME_WIDGET_PADDING_DP, 0).coerceIn(0, 24)
+    )
+    val homeWidgetPaddingDp: StateFlow<Int> = _homeWidgetPaddingDp.asStateFlow()
+
+    private val _homeWidgetScrollableTouch = MutableStateFlow(
+        prefs.getBoolean(KEY_HOME_WIDGET_SCROLLABLE_TOUCH, true)
+    )
+    val homeWidgetScrollableTouch: StateFlow<Boolean> = _homeWidgetScrollableTouch.asStateFlow()
 
     private val _idleDimEnabled = MutableStateFlow(
         prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
@@ -476,9 +551,82 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     }
 
     fun setHomeWidgetHeightDp(heightDp: Int) {
-        val coerced = heightDp.coerceIn(80, 420)
+        val coerced = heightDp.coerceIn(60, 520)
         prefs.edit().putInt(KEY_HOME_WIDGET_HEIGHT_DP, coerced).apply()
         _homeWidgetHeightDp.value = coerced
+    }
+
+    fun setShowAnchorMemo(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_ANCHOR_MEMO, show).apply()
+        _showAnchorMemo.value = show
+    }
+
+    fun setHomeWidgetWidthPercent(percent: Int) {
+        val coerced = percent.coerceIn(40, 100)
+        prefs.edit().putInt(KEY_HOME_WIDGET_WIDTH_PERCENT, coerced).apply()
+        _homeWidgetWidthPercent.value = coerced
+    }
+
+    fun setHomeWidgetVerticalPosition(pos: WidgetVerticalPosition) {
+        prefs.edit().putString(KEY_HOME_WIDGET_VERTICAL_POS, pos.name).apply()
+        _homeWidgetVerticalPosition.value = pos
+    }
+
+    fun setHomeWidgetHorizontalAlignment(align: WidgetHorizontalAlignment) {
+        prefs.edit().putString(KEY_HOME_WIDGET_HORIZONTAL_ALIGN, align.name).apply()
+        _homeWidgetHorizontalAlignment.value = align
+    }
+
+    fun setHomeWidgetVerticalOffsetDp(offsetDp: Int) {
+        val coerced = offsetDp.coerceIn(-120, 200)
+        prefs.edit().putInt(KEY_HOME_WIDGET_VERTICAL_OFFSET_DP, coerced).apply()
+        _homeWidgetVerticalOffsetDp.value = coerced
+    }
+
+    fun setHomeWidgetBgAlphaPercent(percent: Int) {
+        val coerced = percent.coerceIn(0, 85)
+        prefs.edit().putInt(KEY_HOME_WIDGET_BG_ALPHA_PERCENT, coerced).apply()
+        _homeWidgetBgAlphaPercent.value = coerced
+    }
+
+    fun setHomeWidgetCornerRadiusDp(radiusDp: Int) {
+        val coerced = radiusDp.coerceIn(0, 36)
+        prefs.edit().putInt(KEY_HOME_WIDGET_CORNER_RADIUS_DP, coerced).apply()
+        _homeWidgetCornerRadiusDp.value = coerced
+    }
+
+    fun setHomeWidgetPaddingDp(paddingDp: Int) {
+        val coerced = paddingDp.coerceIn(0, 24)
+        prefs.edit().putInt(KEY_HOME_WIDGET_PADDING_DP, coerced).apply()
+        _homeWidgetPaddingDp.value = coerced
+    }
+
+    fun setHomeWidgetScrollableTouch(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HOME_WIDGET_SCROLLABLE_TOUCH, enabled).apply()
+        _homeWidgetScrollableTouch.value = enabled
+    }
+
+    fun resetHomeWidgetAppearance() {
+        prefs.edit()
+            .putInt(KEY_HOME_WIDGET_HEIGHT_DP, 160)
+            .putInt(KEY_HOME_WIDGET_WIDTH_PERCENT, 100)
+            .putString(KEY_HOME_WIDGET_VERTICAL_POS, WidgetVerticalPosition.TOP.name)
+            .putString(KEY_HOME_WIDGET_HORIZONTAL_ALIGN, WidgetHorizontalAlignment.CENTER.name)
+            .putInt(KEY_HOME_WIDGET_VERTICAL_OFFSET_DP, 0)
+            .putInt(KEY_HOME_WIDGET_BG_ALPHA_PERCENT, 0)
+            .putInt(KEY_HOME_WIDGET_CORNER_RADIUS_DP, 16)
+            .putInt(KEY_HOME_WIDGET_PADDING_DP, 0)
+            .putBoolean(KEY_HOME_WIDGET_SCROLLABLE_TOUCH, true)
+            .apply()
+        _homeWidgetHeightDp.value = 160
+        _homeWidgetWidthPercent.value = 100
+        _homeWidgetVerticalPosition.value = WidgetVerticalPosition.TOP
+        _homeWidgetHorizontalAlignment.value = WidgetHorizontalAlignment.CENTER
+        _homeWidgetVerticalOffsetDp.value = 0
+        _homeWidgetBgAlphaPercent.value = 0
+        _homeWidgetCornerRadiusDp.value = 16
+        _homeWidgetPaddingDp.value = 0
+        _homeWidgetScrollableTouch.value = true
     }
 
     fun setIdleDimEnabled(enabled: Boolean) {
@@ -756,6 +904,15 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _honeycombInnerRadiusDp.value = 108
         _honeycombOuterRadiusDp.value = 184
         _pinnedHoneycombPackages.value = emptyList()
+        _showAnchorMemo.value = true
+        _homeWidgetWidthPercent.value = 100
+        _homeWidgetVerticalPosition.value = WidgetVerticalPosition.TOP
+        _homeWidgetHorizontalAlignment.value = WidgetHorizontalAlignment.CENTER
+        _homeWidgetVerticalOffsetDp.value = 0
+        _homeWidgetBgAlphaPercent.value = 0
+        _homeWidgetCornerRadiusDp.value = 16
+        _homeWidgetPaddingDp.value = 0
+        _homeWidgetScrollableTouch.value = true
     }
 
     fun isTrueBlackActive(): Boolean {
@@ -844,7 +1001,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
             )
         }.getOrDefault(IconStyle.MONOCHROME)
         _homeWidgetId.value = prefs.getInt(KEY_HOME_WIDGET_ID, -1)
-        _homeWidgetHeightDp.value = prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(80, 420)
+        _homeWidgetHeightDp.value = prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(60, 520)
         _idleDimEnabled.value = prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
         _customBackronym.value = prefs.getString(KEY_CUSTOM_BACKRONYM, DEFAULT_BACKRONYM)
             ?.takeIf { it.isNotBlank() } ?: DEFAULT_BACKRONYM
@@ -856,6 +1013,25 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _honeycombInnerRadiusDp.value = prefs.getInt(KEY_HONEYCOMB_INNER_RADIUS_DP, 108).coerceIn(80, 140)
         _honeycombOuterRadiusDp.value = prefs.getInt(KEY_HONEYCOMB_OUTER_RADIUS_DP, 184).coerceIn(140, 230)
         _pinnedHoneycombPackages.value = loadPinnedHoneycombPackages()
+        _showAnchorMemo.value = prefs.getBoolean(KEY_SHOW_ANCHOR_MEMO, true)
+        _homeWidgetWidthPercent.value = prefs.getInt(KEY_HOME_WIDGET_WIDTH_PERCENT, 100).coerceIn(40, 100)
+        _homeWidgetVerticalPosition.value = runCatching {
+            WidgetVerticalPosition.valueOf(
+                prefs.getString(KEY_HOME_WIDGET_VERTICAL_POS, WidgetVerticalPosition.TOP.name)
+                    ?: WidgetVerticalPosition.TOP.name
+            )
+        }.getOrDefault(WidgetVerticalPosition.TOP)
+        _homeWidgetHorizontalAlignment.value = runCatching {
+            WidgetHorizontalAlignment.valueOf(
+                prefs.getString(KEY_HOME_WIDGET_HORIZONTAL_ALIGN, WidgetHorizontalAlignment.CENTER.name)
+                    ?: WidgetHorizontalAlignment.CENTER.name
+            )
+        }.getOrDefault(WidgetHorizontalAlignment.CENTER)
+        _homeWidgetVerticalOffsetDp.value = prefs.getInt(KEY_HOME_WIDGET_VERTICAL_OFFSET_DP, 0).coerceIn(-120, 200)
+        _homeWidgetBgAlphaPercent.value = prefs.getInt(KEY_HOME_WIDGET_BG_ALPHA_PERCENT, 0).coerceIn(0, 85)
+        _homeWidgetCornerRadiusDp.value = prefs.getInt(KEY_HOME_WIDGET_CORNER_RADIUS_DP, 16).coerceIn(0, 36)
+        _homeWidgetPaddingDp.value = prefs.getInt(KEY_HOME_WIDGET_PADDING_DP, 0).coerceIn(0, 24)
+        _homeWidgetScrollableTouch.value = prefs.getBoolean(KEY_HOME_WIDGET_SCROLLABLE_TOUCH, true)
     }
 
     private fun exportPreferencesObject(): JSONObject {
@@ -1134,6 +1310,15 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         private const val KEY_HONEYCOMB_INNER_RADIUS_DP = "key_honeycomb_inner_radius_dp"
         private const val KEY_HONEYCOMB_OUTER_RADIUS_DP = "key_honeycomb_outer_radius_dp"
         private const val KEY_PINNED_HONEYCOMB_PACKAGES = "key_pinned_honeycomb_packages"
+        private const val KEY_SHOW_ANCHOR_MEMO = "key_show_anchor_memo"
+        private const val KEY_HOME_WIDGET_WIDTH_PERCENT = "key_home_widget_width_percent"
+        private const val KEY_HOME_WIDGET_VERTICAL_POS = "key_home_widget_vertical_pos"
+        private const val KEY_HOME_WIDGET_HORIZONTAL_ALIGN = "key_home_widget_horizontal_align"
+        private const val KEY_HOME_WIDGET_VERTICAL_OFFSET_DP = "key_home_widget_vertical_offset_dp"
+        private const val KEY_HOME_WIDGET_BG_ALPHA_PERCENT = "key_home_widget_bg_alpha_percent"
+        private const val KEY_HOME_WIDGET_CORNER_RADIUS_DP = "key_home_widget_corner_radius_dp"
+        private const val KEY_HOME_WIDGET_PADDING_DP = "key_home_widget_padding_dp"
+        private const val KEY_HOME_WIDGET_SCROLLABLE_TOUCH = "key_home_widget_scrollable_touch"
 
         private val BACKUP_EXCLUDED_KEYS = setOf(
             KEY_LAST_UPDATE_CHECK_TIME,

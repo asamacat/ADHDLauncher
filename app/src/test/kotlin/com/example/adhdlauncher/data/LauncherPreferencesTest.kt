@@ -495,4 +495,85 @@ class LauncherPreferencesTest {
         assertEquals("com.app.frequent", topApps[2].packageName)
         assertEquals("com.app.second", topApps[3].packageName)
     }
+
+    @Test
+    fun testIconStyle_originalIsFirstInEnumOrder() {
+        assertEquals(IconStyle.ORIGINAL, IconStyle.values().first())
+        assertTrue(IconStyle.ORIGINAL.shortLabel.isNotBlank())
+    }
+
+    @Test
+    fun testShowAnchorMemo_persistsAndResetsToTrue() {
+        assertTrue(preferences.showAnchorMemo.value)
+        preferences.setShowAnchorMemo(false)
+        assertFalse(preferences.showAnchorMemo.value)
+
+        // Verify persistence via reload
+        val reloaded = LauncherPreferences(fakePrefs)
+        assertFalse(reloaded.showAnchorMemo.value)
+
+        preferences.resetAllSettings()
+        assertTrue(preferences.showAnchorMemo.value)
+    }
+
+    @Test
+    fun testWidgetCustomizationPreferences_persistBoundsAndReset() {
+        // Height extended bounds 60..520
+        preferences.setHomeWidgetHeightDp(30)
+        assertEquals(60, preferences.homeWidgetHeightDp.value)
+        preferences.setHomeWidgetHeightDp(900)
+        assertEquals(520, preferences.homeWidgetHeightDp.value)
+
+        // Width percent 40..100
+        preferences.setHomeWidgetWidthPercent(10)
+        assertEquals(40, preferences.homeWidgetWidthPercent.value)
+        preferences.setHomeWidgetWidthPercent(120)
+        assertEquals(100, preferences.homeWidgetWidthPercent.value)
+        preferences.setHomeWidgetWidthPercent(75)
+        assertEquals(75, preferences.homeWidgetWidthPercent.value)
+
+        // Vertical position & horizontal alignment
+        preferences.setHomeWidgetVerticalPosition(WidgetVerticalPosition.BOTTOM)
+        assertEquals(WidgetVerticalPosition.BOTTOM, preferences.homeWidgetVerticalPosition.value)
+        preferences.setHomeWidgetHorizontalAlignment(WidgetHorizontalAlignment.END)
+        assertEquals(WidgetHorizontalAlignment.END, preferences.homeWidgetHorizontalAlignment.value)
+
+        // Vertical offset -120..200
+        preferences.setHomeWidgetVerticalOffsetDp(-500)
+        assertEquals(-120, preferences.homeWidgetVerticalOffsetDp.value)
+        preferences.setHomeWidgetVerticalOffsetDp(500)
+        assertEquals(200, preferences.homeWidgetVerticalOffsetDp.value)
+
+        // Bg alpha 0..85, corner radius 0..36, padding 0..24
+        preferences.setHomeWidgetBgAlphaPercent(99)
+        assertEquals(85, preferences.homeWidgetBgAlphaPercent.value)
+        preferences.setHomeWidgetCornerRadiusDp(50)
+        assertEquals(36, preferences.homeWidgetCornerRadiusDp.value)
+        preferences.setHomeWidgetPaddingDp(40)
+        assertEquals(24, preferences.homeWidgetPaddingDp.value)
+
+        // Scrollable touch toggle
+        preferences.setHomeWidgetScrollableTouch(false)
+        assertFalse(preferences.homeWidgetScrollableTouch.value)
+
+        // Verify persistence
+        val reloaded = LauncherPreferences(fakePrefs)
+        assertEquals(75, reloaded.homeWidgetWidthPercent.value)
+        assertEquals(WidgetVerticalPosition.BOTTOM, reloaded.homeWidgetVerticalPosition.value)
+        assertEquals(WidgetHorizontalAlignment.END, reloaded.homeWidgetHorizontalAlignment.value)
+        assertEquals(85, reloaded.homeWidgetBgAlphaPercent.value)
+        assertFalse(reloaded.homeWidgetScrollableTouch.value)
+
+        // Reset appearance restores defaults cleanly
+        preferences.resetHomeWidgetAppearance()
+        assertEquals(160, preferences.homeWidgetHeightDp.value)
+        assertEquals(100, preferences.homeWidgetWidthPercent.value)
+        assertEquals(WidgetVerticalPosition.TOP, preferences.homeWidgetVerticalPosition.value)
+        assertEquals(WidgetHorizontalAlignment.CENTER, preferences.homeWidgetHorizontalAlignment.value)
+        assertEquals(0, preferences.homeWidgetVerticalOffsetDp.value)
+        assertEquals(0, preferences.homeWidgetBgAlphaPercent.value)
+        assertEquals(16, preferences.homeWidgetCornerRadiusDp.value)
+        assertEquals(0, preferences.homeWidgetPaddingDp.value)
+        assertTrue(preferences.homeWidgetScrollableTouch.value)
+    }
 }

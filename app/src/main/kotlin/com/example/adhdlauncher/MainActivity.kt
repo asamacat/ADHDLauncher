@@ -61,7 +61,12 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK && widgetId != -1) {
             finalizeWidgetPlacement(widgetId)
         } else if (widgetId != -1) {
-            appWidgetHost.deleteAppWidgetId(widgetId)
+            // 既に配置済みウィジェットの「再設定」をキャンセルした時は既存ウィジェットを削除しない
+            if (widgetId != preferences.homeWidgetId.value) {
+                try {
+                    appWidgetHost.deleteAppWidgetId(widgetId)
+                } catch (_: Exception) {}
+            }
             pendingWidgetId = -1
         }
     }
@@ -125,6 +130,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun reconfigureHomeWidget() {
+        val currentId = preferences.homeWidgetId.value
+        if (currentId == -1) return
+        val info = try {
+            appWidgetManager.getAppWidgetInfo(currentId)
+        } catch (_: Exception) {
+            null
+        } ?: return
+
+        if (info.configure != null) {
+            val configIntent = Intent(AppWidgetManager.ACTION_APPWIDGET_CONFIGURE).apply {
+                component = info.configure
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, currentId)
+            }
+            try {
+                pendingWidgetId = currentId
+                widgetConfigureLauncher.launch(configIntent)
+            } catch (_: Exception) {
+                pendingWidgetId = -1
+            }
+        } else {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(info.provider.packageName)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -161,6 +197,7 @@ class MainActivity : ComponentActivity() {
                     homePressTrigger = homePressTrigger,
                     packageChangeTrigger = packageChangeTrigger,
                     onPickWidget = ::launchWidgetPicker,
+                    onConfigureWidget = ::reconfigureHomeWidget,
                     onRemoveWidget = ::removeHomeWidget
                 )
             }
@@ -206,6 +243,7 @@ fun LauncherMain(
     homePressTrigger: Int,
     packageChangeTrigger: Int,
     onPickWidget: () -> Unit,
+    onConfigureWidget: () -> Unit,
     onRemoveWidget: () -> Unit
 ) {
     val context = LocalContext.current
@@ -375,6 +413,7 @@ fun LauncherMain(
                 initialPage = settingsInitialPage,
                 updateManager = updateManager,
                 onPickWidget = onPickWidget,
+                onConfigureWidget = onConfigureWidget,
                 onRemoveWidget = onRemoveWidget,
                 onToggleAppHidden = { app, hidden ->
                     apps = appRepository.setAppHidden(app.packageName, hidden)
