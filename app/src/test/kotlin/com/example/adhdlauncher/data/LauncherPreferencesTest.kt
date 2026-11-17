@@ -576,4 +576,17 @@ class LauncherPreferencesTest {
         assertEquals(0, preferences.homeWidgetPaddingDp.value)
         assertTrue(preferences.homeWidgetScrollableTouch.value)
     }
+
+    @Test
+    fun testShowProactiveGlance_persistsAndResetsToTrue() {
+        assertTrue(preferences.showProactiveGlance.value)
+        preferences.setShowProactiveGlance(false)
+        assertFalse(preferences.showProactiveGlance.value)
+
+        val reloaded = LauncherPreferences(fakePrefs)
+        assertFalse(reloaded.showProactiveGlance.value)
+
+        preferences.resetAllSettings()
+        assertTrue(preferences.showProactiveGlance.value)
+    }
 }

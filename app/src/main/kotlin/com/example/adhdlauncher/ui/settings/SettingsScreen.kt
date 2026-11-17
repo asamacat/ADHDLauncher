@@ -1610,6 +1610,7 @@ private fun HomeSettingsView(
     val context = LocalContext.current
     val clockPosition by preferences.clockPosition.collectAsState()
     val showAnchorMemo by preferences.showAnchorMemo.collectAsState()
+    val showProactiveGlance by preferences.showProactiveGlance.collectAsState()
     val honeycombEnabled by preferences.honeycombEnabled.collectAsState()
     val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
     val honeycombInnerRadiusDp by preferences.honeycombInnerRadiusDp.collectAsState()
@@ -1750,13 +1751,20 @@ private fun HomeSettingsView(
             modifier = Modifier.padding(vertical = 12.dp)
         )
 
-        // 2. 今スマホを開いた目的メモ（アンカー）の表示 ON/OFF
+        // 2. 先まわり表示（At a Glance）・目的メモ（アンカー）の表示 ON/OFF
         Text(
-            text = "目的メモ（アンカー）",
+            text = "先まわり表示（At a Glance）・目的メモ",
             fontSize = 13.sp,
             fontWeight = FontWeight.Medium,
             color = AccentCyan,
             modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        CleanSwitchRow(
+            title = "先まわり情報（At a Glance もどき）を表示",
+            subtitle = "現在の時間帯によく使うアプリ1件・次のアラーム・バッテリー状態を時計の下に控えめに表示します",
+            checked = showProactiveGlance,
+            onCheckedChange = { preferences.setShowProactiveGlance(it) }
         )
 
         CleanSwitchRow(

@@ -1,8 +1,13 @@
 package com.example.adhdlauncher.ui.home
 
+import android.app.AlarmManager
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import android.os.Bundle
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -113,6 +118,7 @@ fun HomeScreen(
     val homeWidgetPaddingDp by preferences.homeWidgetPaddingDp.collectAsState()
     val homeWidgetScrollableTouch by preferences.homeWidgetScrollableTouch.collectAsState()
     val showAnchorMemo by preferences.showAnchorMemo.collectAsState()
+    val showProactiveGlance by preferences.showProactiveGlance.collectAsState()
     val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
     val idleDimDelaySec by preferences.idleDimDelaySec.collectAsState()
     val idleDimAlphaPercent by preferences.idleDimAlphaPercent.collectAsState()
@@ -327,8 +333,18 @@ fun HomeScreen(
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
                     color = Color.White.copy(alpha = 0.85f),
-                    modifier = Modifier.padding(bottom = 14.dp)
+                    modifier = Modifier.padding(bottom = 10.dp)
                 )
+            }
+
+            // 1.5 先まわりコンテキスト表示（At a Glance もどき）
+            if (showProactiveGlance) {
+                ProactiveGlanceBar(
+                    timeTick = currentTime,
+                    topContextualApp = honeycombApps.firstOrNull(),
+                    onAppClick = onAppClick
+                )
+                Spacer(modifier = Modifier.height(10.dp))
             }
 
             // ホーム画面ウィジェット（上部配置）
@@ -851,5 +867,125 @@ private fun HomeWidgetContainer(
                 .background(Color.Black.copy(alpha = bgAlphaPercent / 100f))
                 .padding(paddingDp.dp)
         )
+    }
+}
+
+/**
+ * 先まわりコンテキスト表示（At a Glance もどき）:
+ * 権限不要のシステム情報（時間帯コンテキスト・次回アラーム・バッテリー）と、
+ * 12バケット学習に基づく「今の時間帯の定番アプリ」1件を控えめに表示する
+ */
+@Composable
+private fun ProactiveGlanceBar(
+    timeTick: String,
+    topContextualApp: AppInfo?,
+    onAppClick: (AppInfo) -> Unit
+) {
+    val context = LocalContext.current
+
+    val contextSummary = remember(timeTick) {
+        val parts = mutableListOf<String>()
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val bucketLabel = when (hour) {
+            in 0..3 -> "深夜"
+            in 4..7 -> "早朝・朝"
+            in 8..11 -> "午前"
+            in 12..15 -> "午後"
+            in 16..19 -> "夕方"
+            else -> "夜"
+        }
+        parts.add(bucketLabel)
+
+        val alarmTime = try {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+            val next = am?.nextAlarmClock
+            if (next != null && next.triggerTime > System.currentTimeMillis()) {
+                SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(next.triggerTime))
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+        if (alarmTime != null) {
+            parts.add("⏰ $alarmTime")
+        }
+
+        val batteryLabel = try {
+            val intent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            if (intent != null) {
+                val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+                val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)
+                val status = intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)
+                val pct = ((level * 100f) / scale).roundToInt().coerceIn(0, 100)
+                val isCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+                when {
+                    isCharging -> "⚡ 充電中 $pct%"
+                    pct in 0..25 -> "🔋 残量 $pct%"
+                    else -> null
+                }
+            } else null
+        } catch (_: Exception) {
+            null
+        }
+        if (batteryLabel != null) {
+            parts.add(batteryLabel)
+        }
+
+        parts.joinToString("  •  ")
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(
+            text = contextSummary,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color.White.copy(alpha = 0.65f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        if (topContextualApp != null) {
+            Spacer(modifier = Modifier.height(6.dp))
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color.Black.copy(alpha = 0.45f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .border(
+                        width = 1.dp,
+                        color = Color(0xFF94A88B).copy(alpha = 0.35f),
+                        shape = RoundedCornerShape(20.dp)
+                    )
+                    .clickable { onAppClick(topContextualApp) }
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                ) {
+                    val bmp = topContextualApp.iconBitmap
+                    if (bmp != null) {
+                        Image(
+                            bitmap = bmp,
+                            contentDescription = topContextualApp.label,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(HexagonShape)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text(
+                        text = "この時間帯の定番: ${topContextualApp.label}",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color.White.copy(alpha = 0.85f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
     }
 }

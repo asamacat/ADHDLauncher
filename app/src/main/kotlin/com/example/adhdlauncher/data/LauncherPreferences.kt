@@ -339,6 +339,11 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     )
     val showAnchorMemo: StateFlow<Boolean> = _showAnchorMemo.asStateFlow()
 
+    private val _showProactiveGlance = MutableStateFlow(
+        prefs.getBoolean(KEY_SHOW_PROACTIVE_GLANCE, true)
+    )
+    val showProactiveGlance: StateFlow<Boolean> = _showProactiveGlance.asStateFlow()
+
     private val _homeWidgetWidthPercent = MutableStateFlow(
         prefs.getInt(KEY_HOME_WIDGET_WIDTH_PERCENT, 100).coerceIn(40, 100)
     )
@@ -559,6 +564,11 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     fun setShowAnchorMemo(show: Boolean) {
         prefs.edit().putBoolean(KEY_SHOW_ANCHOR_MEMO, show).apply()
         _showAnchorMemo.value = show
+    }
+
+    fun setShowProactiveGlance(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_PROACTIVE_GLANCE, show).apply()
+        _showProactiveGlance.value = show
     }
 
     fun setHomeWidgetWidthPercent(percent: Int) {
@@ -905,6 +915,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _honeycombOuterRadiusDp.value = 184
         _pinnedHoneycombPackages.value = emptyList()
         _showAnchorMemo.value = true
+        _showProactiveGlance.value = true
         _homeWidgetWidthPercent.value = 100
         _homeWidgetVerticalPosition.value = WidgetVerticalPosition.TOP
         _homeWidgetHorizontalAlignment.value = WidgetHorizontalAlignment.CENTER
@@ -1014,6 +1025,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _honeycombOuterRadiusDp.value = prefs.getInt(KEY_HONEYCOMB_OUTER_RADIUS_DP, 184).coerceIn(140, 230)
         _pinnedHoneycombPackages.value = loadPinnedHoneycombPackages()
         _showAnchorMemo.value = prefs.getBoolean(KEY_SHOW_ANCHOR_MEMO, true)
+        _showProactiveGlance.value = prefs.getBoolean(KEY_SHOW_PROACTIVE_GLANCE, true)
         _homeWidgetWidthPercent.value = prefs.getInt(KEY_HOME_WIDGET_WIDTH_PERCENT, 100).coerceIn(40, 100)
         _homeWidgetVerticalPosition.value = runCatching {
             WidgetVerticalPosition.valueOf(
@@ -1311,6 +1323,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         private const val KEY_HONEYCOMB_OUTER_RADIUS_DP = "key_honeycomb_outer_radius_dp"
         private const val KEY_PINNED_HONEYCOMB_PACKAGES = "key_pinned_honeycomb_packages"
         private const val KEY_SHOW_ANCHOR_MEMO = "key_show_anchor_memo"
+        private const val KEY_SHOW_PROACTIVE_GLANCE = "key_show_proactive_glance"
         private const val KEY_HOME_WIDGET_WIDTH_PERCENT = "key_home_widget_width_percent"
         private const val KEY_HOME_WIDGET_VERTICAL_POS = "key_home_widget_vertical_pos"
         private const val KEY_HOME_WIDGET_HORIZONTAL_ALIGN = "key_home_widget_horizontal_align"
