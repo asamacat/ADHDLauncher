@@ -57,6 +57,7 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -86,6 +87,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.adhdlauncher.data.AiProviderType
@@ -161,6 +163,7 @@ fun SettingsScreen(
         ) { page ->
             when (page) {
                 SettingsPage.ROOT -> RootSettingsView(
+                    preferences = preferences,
                     onNavigate = { currentPage = it },
                     onClose = onClose
                 )
@@ -174,6 +177,7 @@ fun SettingsScreen(
                     onOpenAppearance = { currentPage = SettingsPage.APPEARANCE }
                 )
                 SettingsPage.HOME_PAGE -> HomeSettingsView(
+                    apps = apps,
                     preferences = preferences,
                     onPickWidget = onPickWidget,
                     onRemoveWidget = onRemoveWidget,
@@ -210,6 +214,7 @@ fun SettingsScreen(
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
                 SettingsPage.APP_INFO -> AppInfoSettingsView(
+                    preferences = preferences,
                     updateManager = effectiveUpdateManager,
                     onBack = { currentPage = SettingsPage.ROOT }
                 )
@@ -220,10 +225,12 @@ fun SettingsScreen(
 
 @Composable
 private fun RootSettingsView(
+    preferences: LauncherPreferences,
     onNavigate: (SettingsPage) -> Unit,
     onClose: () -> Unit
 ) {
     val context = LocalContext.current
+    val customBackronym by preferences.customBackronym.collectAsState()
 
     Column(
         modifier = Modifier
@@ -239,11 +246,11 @@ private fun RootSettingsView(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = AccentSage,
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(38.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Image(
@@ -254,7 +261,7 @@ private fun RootSettingsView(
                     }
                 }
                 Spacer(modifier = Modifier.width(14.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = "設定",
                         fontSize = 22.sp,
@@ -264,7 +271,14 @@ private fun RootSettingsView(
                     Text(
                         text = "ADHD Launcher v${BuildConfig.VERSION_NAME}",
                         fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.45f)
+                        color = Color.White.copy(alpha = 0.55f)
+                    )
+                    Text(
+                        text = customBackronym,
+                        fontSize = 10.sp,
+                        color = AccentSage.copy(alpha = 0.9f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1580,17 +1594,27 @@ private fun SearchSettingsView(
 
 @Composable
 private fun HomeSettingsView(
+    apps: List<AppInfo>,
     preferences: LauncherPreferences,
     onPickWidget: () -> Unit,
     onRemoveWidget: () -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val clockPosition by preferences.clockPosition.collectAsState()
     val honeycombEnabled by preferences.honeycombEnabled.collectAsState()
     val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
+    val honeycombInnerRadiusDp by preferences.honeycombInnerRadiusDp.collectAsState()
+    val honeycombOuterRadiusDp by preferences.honeycombOuterRadiusDp.collectAsState()
+    val pinnedHoneycombPackages by preferences.pinnedHoneycombPackages.collectAsState()
     val homeWidgetId by preferences.homeWidgetId.collectAsState()
     val homeWidgetHeightDp by preferences.homeWidgetHeightDp.collectAsState()
     val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
+    val idleDimDelaySec by preferences.idleDimDelaySec.collectAsState()
+    val idleDimAlphaPercent by preferences.idleDimAlphaPercent.collectAsState()
+
+    var showPinnedAppsDialog by remember { mutableStateOf(false) }
+    var pinnedSearchQuery by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -1611,79 +1635,83 @@ private fun HomeSettingsView(
 
         CleanSwitchRow(
             title = "タップした場所にアプリを扇状展開",
-            subtitle = "ホーム画面の空白をタップした位置に、現在よく使うアプリを扇状に展開して片手で素早く起動できます",
+            subtitle = "ホーム画面の空白をタップした位置に、よく使うアプリや固定アプリを扇状に展開して片手で素早く起動できます",
             checked = honeycombEnabled,
             onCheckedChange = { preferences.setHoneycombEnabled(it) }
         )
 
         if (honeycombEnabled) {
-            Row(
+            NumericStepperRow(
+                title = "扇状に展開するアプリ数",
+                subtitle = "タップ位置の周囲に並べるアプリ数（最大12個、標準7個）",
+                valueText = "${honeycombAppCount}個",
+                onDecrement = { preferences.setHoneycombAppCount(honeycombAppCount - 1) },
+                onIncrement = { preferences.setHoneycombAppCount(honeycombAppCount + 1) }
+            )
+
+            NumericStepperRow(
+                title = "内側アーク半径 (${honeycombInnerRadiusDp}dp)",
+                subtitle = "指元から内側1列目（1〜4番目）までの距離（80〜140dp、標準108dp）",
+                valueText = "${honeycombInnerRadiusDp}dp",
+                onDecrement = { preferences.setHoneycombInnerRadiusDp(honeycombInnerRadiusDp - 4) },
+                onIncrement = { preferences.setHoneycombInnerRadiusDp(honeycombInnerRadiusDp + 4) }
+            )
+
+            NumericStepperRow(
+                title = "外側アーク半径 (${honeycombOuterRadiusDp}dp)",
+                subtitle = "指元から外側2列目（5番目以降）までの距離（140〜230dp、標準184dp）",
+                valueText = "${honeycombOuterRadiusDp}dp",
+                onDecrement = { preferences.setHoneycombOuterRadiusDp(honeycombOuterRadiusDp - 6) },
+                onIncrement = { preferences.setHoneycombOuterRadiusDp(honeycombOuterRadiusDp + 6) }
+            )
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF14161B),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .padding(vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        pinnedSearchQuery = ""
+                        showPinnedAppsDialog = true
+                    }
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "扇状に展開するアプリ数",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "タップ位置の周囲に並べるアプリ数（最大12個、標準7個）",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.55f)
-                    )
-                }
-
                 Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF1C1D22),
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { preferences.setHoneycombAppCount(honeycombAppCount - 1) }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Remove,
-                                contentDescription = "減らす",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            imageVector = Icons.Default.PushPin,
+                            contentDescription = null,
+                            tint = Color(0xFF80CBC4),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "タップ展開に固定するアプリ（現在 ${pinnedHoneycombPackages.size}/4個）",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "カメラやメモ等を内側スロットへ固定し、位置が変わらない筋肉記憶を保ちます",
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.55f),
+                                lineHeight = 16.sp
                             )
                         }
                     }
-
-                    Text(
-                        text = honeycombAppCount.toString(),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.5f)
                     )
-
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF1C1D22),
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { preferences.setHoneycombAppCount(honeycombAppCount + 1) }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "増やす",
-                                tint = Color.White,
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -1747,48 +1775,13 @@ private fun HomeSettingsView(
 
         if (homeWidgetId != -1) {
             Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "ウィジェットの高さ (${homeWidgetHeightDp}dp)",
-                    fontSize = 14.sp,
-                    color = Color.White
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF1C1D22),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp - 20) }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Remove, contentDescription = "低くする", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFF1C1D22),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp + 20) }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Add, contentDescription = "高くする", tint = Color.White, modifier = Modifier.size(18.dp))
-                        }
-                    }
-                }
-            }
+            NumericStepperRow(
+                title = "ウィジェットの高さ (${homeWidgetHeightDp}dp)",
+                subtitle = "80〜420dp（20dp刻み）",
+                valueText = "${homeWidgetHeightDp}dp",
+                onDecrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp - 20) },
+                onIncrement = { preferences.setHomeWidgetHeightDp(homeWidgetHeightDp + 20) }
+            )
         }
 
         HorizontalDivider(
@@ -1807,10 +1800,28 @@ private fun HomeSettingsView(
 
         CleanSwitchRow(
             title = "無操作時の自動フェード（刺激低減）",
-            subtitle = "ホーム画面で5秒間操作がない場合、ウィジェットや時計を半透明（24%）にフェードさせて視覚刺激を低減します",
+            subtitle = "ホーム画面で${idleDimDelaySec}秒間操作がない場合、ウィジェットや時計を不透明度${idleDimAlphaPercent}%にフェードさせて視覚刺激を低減します",
             checked = idleDimEnabled,
             onCheckedChange = { preferences.setIdleDimEnabled(it) }
         )
+
+        if (idleDimEnabled) {
+            NumericStepperRow(
+                title = "フェードまでの無操作秒数 (${idleDimDelaySec}秒)",
+                subtitle = "2〜30秒（標準5秒）",
+                valueText = "${idleDimDelaySec}秒",
+                onDecrement = { preferences.setIdleDimDelaySec(idleDimDelaySec - 1) },
+                onIncrement = { preferences.setIdleDimDelaySec(idleDimDelaySec + 1) }
+            )
+
+            NumericStepperRow(
+                title = "フェード時の不透明度 (${idleDimAlphaPercent}%)",
+                subtitle = "低いほど暗く控えめになります（5〜70%、標準24%）",
+                valueText = "${idleDimAlphaPercent}%",
+                onDecrement = { preferences.setIdleDimAlphaPercent(idleDimAlphaPercent - 5) },
+                onIncrement = { preferences.setIdleDimAlphaPercent(idleDimAlphaPercent + 5) }
+            )
+        }
 
         HorizontalDivider(
             color = Color.White.copy(alpha = 0.1f),
@@ -1837,6 +1848,122 @@ private fun HomeSettingsView(
 
         Spacer(modifier = Modifier.height(36.dp))
     }
+
+    if (showPinnedAppsDialog) {
+        val selectableApps = remember(apps, pinnedHoneycombPackages, pinnedSearchQuery) {
+            val base = apps.filter { !it.isHidden }
+            val filtered = if (pinnedSearchQuery.isBlank()) {
+                base
+            } else {
+                base.filter {
+                    it.label.contains(pinnedSearchQuery, ignoreCase = true) ||
+                        it.packageName.contains(pinnedSearchQuery, ignoreCase = true)
+                }
+            }
+            filtered.sortedWith(
+                compareByDescending<AppInfo> { it.packageName in pinnedHoneycombPackages }
+                    .thenBy { it.label.lowercase() }
+            )
+        }
+
+        AlertDialog(
+            onDismissRequest = { showPinnedAppsDialog = false },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "タップ展開に固定するアプリ (${pinnedHoneycombPackages.size}/4)",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "固定したアプリ（カメラ等）は常に内側アークの先頭に固定表示されます（最大4個）。",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = pinnedSearchQuery,
+                        onValueChange = { pinnedSearchQuery = it },
+                        placeholder = { Text("アプリ名で絞り込み...", fontSize = 13.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.25f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 300.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        selectableApps.forEach { app ->
+                            val isPinned = app.packageName in pinnedHoneycombPackages
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val ok = preferences.togglePinnedHoneycombPackage(app.packageName)
+                                        if (!isPinned && !ok) {
+                                            Toast.makeText(context, "固定できるのは最大4個までです", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isPinned,
+                                    onCheckedChange = {
+                                        val ok = preferences.togglePinnedHoneycombPackage(app.packageName)
+                                        if (!isPinned && !ok) {
+                                            Toast.makeText(context, "固定できるのは最大4個までです", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = app.label,
+                                        fontSize = 14.sp,
+                                        color = Color.White,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = app.packageName,
+                                        fontSize = 10.sp,
+                                        color = Color.White.copy(alpha = 0.4f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPinnedAppsDialog = false }) {
+                    Text("完了", color = AccentCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                if (pinnedHoneycombPackages.isNotEmpty()) {
+                    TextButton(onClick = { preferences.setPinnedHoneycombPackages(emptyList()) }) {
+                        Text("すべて解除", color = Color(0xFFEF9A9A))
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -1846,6 +1973,8 @@ private fun AppearanceSettingsView(
 ) {
     val displayMode by preferences.displayMode.collectAsState()
     val iconStyle by preferences.iconStyle.collectAsState()
+    val scheduleStartHour by preferences.scheduleStartHour.collectAsState()
+    val scheduleEndHour by preferences.scheduleEndHour.collectAsState()
 
     Column(
         modifier = Modifier
@@ -1921,11 +2050,34 @@ private fun AppearanceSettingsView(
         )
 
         DisplayMode.values().forEach { mode ->
+            val dynamicSubtitle = if (mode == DisplayMode.AUTO_SCHEDULE) {
+                "${scheduleStartHour}:00〜${scheduleEndHour}:00 は有機ELの画素を消灯する完全黒モードへ自動切替"
+            } else {
+                mode.description
+            }
             CleanRadioRow(
                 title = mode.label,
-                subtitle = mode.description,
+                subtitle = dynamicSubtitle,
                 selected = (displayMode == mode),
                 onClick = { preferences.setDisplayMode(mode) }
+            )
+        }
+
+        if (displayMode == DisplayMode.AUTO_SCHEDULE) {
+            Spacer(modifier = Modifier.height(6.dp))
+            NumericStepperRow(
+                title = "完全黒モード開始時刻 (${scheduleStartHour}:00)",
+                subtitle = "夜間の自動切り替えを開始する時刻（0〜23時）",
+                valueText = "${scheduleStartHour}:00",
+                onDecrement = { preferences.setScheduleStartHour(scheduleStartHour - 1) },
+                onIncrement = { preferences.setScheduleStartHour(scheduleStartHour + 1) }
+            )
+            NumericStepperRow(
+                title = "完全黒モード終了時刻 (${scheduleEndHour}:00)",
+                subtitle = "翌朝に壁紙表示へ戻す時刻（0〜23時）",
+                valueText = "${scheduleEndHour}:00",
+                onDecrement = { preferences.setScheduleEndHour(scheduleEndHour - 1) },
+                onIncrement = { preferences.setScheduleEndHour(scheduleEndHour + 1) }
             )
         }
 
@@ -1943,6 +2095,7 @@ private fun GestureSettingsView(
     val swipeDownSearch by preferences.gestureSwipeDownSearch.collectAsState()
     val swipeDownCloseDrawer by preferences.gestureSwipeDownCloseDrawer.collectAsState()
     val doubleTapTrueBlack by preferences.gestureDoubleTapTrueBlack.collectAsState()
+    val swipeThresholdDp by preferences.swipeThresholdDp.collectAsState()
 
     Column(
         modifier = Modifier
@@ -1987,6 +2140,27 @@ private fun GestureSettingsView(
 
         HorizontalDivider(
             color = Color.White.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        Text(
+            text = "スワイプ感度の調整",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = AccentCyan,
+            modifier = Modifier.padding(vertical = 8.dp)
+        )
+
+        NumericStepperRow(
+            title = "スワイプ感度・発火距離 (${swipeThresholdDp}dp)",
+            subtitle = "値が小さいほど軽いスワイプで反応します（16〜72dp、標準32dp）",
+            valueText = "${swipeThresholdDp}dp",
+            onDecrement = { preferences.setSwipeThresholdDp(swipeThresholdDp - 4) },
+            onIncrement = { preferences.setSwipeThresholdDp(swipeThresholdDp + 4) }
+        )
+
+        HorizontalDivider(
+            color = Color.White.copy(alpha = 0.1f),
             modifier = Modifier.padding(vertical = 14.dp)
         )
 
@@ -2006,6 +2180,8 @@ private fun GestureSettingsView(
                 onClick = { preferences.setHandedness(hand) }
             )
         }
+
+        Spacer(modifier = Modifier.height(36.dp))
     }
 }
 
@@ -2507,13 +2683,17 @@ private fun BackupSettingsView(
 
 @Composable
 private fun AppInfoSettingsView(
+    preferences: LauncherPreferences,
     updateManager: UpdateManager,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val updateStatus by updateManager.status.collectAsState()
+    val customBackronym by preferences.customBackronym.collectAsState()
     var showSupportPlaceholderDialog by remember { mutableStateOf(false) }
+    var showBackronymDialog by remember { mutableStateOf(false) }
+    var editingBackronym by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -2557,6 +2737,13 @@ private fun AppInfoSettingsView(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
+                    text = customBackronym,
+                    fontSize = 12.sp,
+                    color = AccentSage,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
                     text = "バージョン ${BuildConfig.VERSION_NAME} (Build ${BuildConfig.VERSION_CODE})",
                     fontSize = 13.sp,
                     color = Color.White.copy(alpha = 0.6f)
@@ -2566,6 +2753,59 @@ private fun AppInfoSettingsView(
                     text = "固定署名リリース版 (Signature Invariant: OK)",
                     fontSize = 11.sp,
                     color = AccentCyan.copy(alpha = 0.8f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // バクロニム（正式名称・副題）の変更行
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF14161B),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable {
+                    editingBackronym = customBackronym
+                    showBackronymDialog = true
+                }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = AccentSage,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "バクロニム（副題）の変更",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White
+                        )
+                        Text(
+                            text = customBackronym,
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.55f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.4f)
                 )
             }
         }
@@ -2957,6 +3197,100 @@ private fun AppInfoSettingsView(
             }
         )
     }
+
+    if (showBackronymDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackronymDialog = false },
+            containerColor = Color(0xFF1A1B20),
+            titleContentColor = Color.White,
+            textContentColor = Color.White,
+            title = {
+                Text(
+                    text = "バクロニム（副題）の変更",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "「ADHD」に込める意味（副題）を自由に変更できます。設定画面のヘッダーに表示されます。",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.65f),
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "プリセットから選択",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = AccentCyan
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    LauncherPreferences.BACKRONYM_PRESETS.forEach { preset ->
+                        val isCurrent = (editingBackronym.trim() == preset)
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isCurrent) AccentSage.copy(alpha = 0.25f) else Color(0xFF252730),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { editingBackronym = preset }
+                        ) {
+                            Text(
+                                text = preset,
+                                fontSize = 12.sp,
+                                color = if (isCurrent) Color.White else Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = editingBackronym,
+                        onValueChange = { editingBackronym = it },
+                        label = { Text("カスタム表記", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = AccentCyan,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.25f),
+                            focusedLabelColor = AccentCyan,
+                            unfocusedLabelColor = Color.White.copy(alpha = 0.6f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        preferences.setCustomBackronym(editingBackronym)
+                        showBackronymDialog = false
+                        Toast.makeText(context, "バクロニムを更新しました", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("保存", color = AccentCyan, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(
+                        onClick = {
+                            editingBackronym = LauncherPreferences.DEFAULT_BACKRONYM
+                        }
+                    ) {
+                        Text("標準に戻す", color = AccentSage)
+                    }
+                    TextButton(onClick = { showBackronymDialog = false }) {
+                        Text("キャンセル", color = Color.White.copy(alpha = 0.6f))
+                    }
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -3180,6 +3514,86 @@ private fun CleanRadioRow(
                 fontSize = 13.sp,
                 color = Color.White.copy(alpha = 0.55f)
             )
+        }
+    }
+}
+
+@Composable
+private fun NumericStepperRow(
+    title: String,
+    subtitle: String? = null,
+    valueText: String,
+    onDecrement: () -> Unit,
+    onIncrement: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(
+                text = title,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.55f),
+                    lineHeight = 16.sp
+                )
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF1C1D22),
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onDecrement)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Remove,
+                        contentDescription = "減らす",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Text(
+                text = valueText,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF1C1D22),
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable(onClick = onIncrement)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "増やす",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
         }
     }
 }

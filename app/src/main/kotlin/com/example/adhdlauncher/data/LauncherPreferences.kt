@@ -319,6 +319,61 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     )
     val idleDimEnabled: StateFlow<Boolean> = _idleDimEnabled.asStateFlow()
 
+    // --- バクロニウム（副題）・ユーザー可変数値パラメータ・ハニカム固定アプリ (v0.3.5) ---
+    private val _customBackronym = MutableStateFlow(
+        prefs.getString(KEY_CUSTOM_BACKRONYM, DEFAULT_BACKRONYM)
+            ?.takeIf { it.isNotBlank() } ?: DEFAULT_BACKRONYM
+    )
+    val customBackronym: StateFlow<String> = _customBackronym.asStateFlow()
+
+    private val _idleDimDelaySec = MutableStateFlow(
+        prefs.getInt(KEY_IDLE_DIM_DELAY_SEC, 5).coerceIn(2, 30)
+    )
+    val idleDimDelaySec: StateFlow<Int> = _idleDimDelaySec.asStateFlow()
+
+    private val _idleDimAlphaPercent = MutableStateFlow(
+        prefs.getInt(KEY_IDLE_DIM_ALPHA_PERCENT, 24).coerceIn(5, 70)
+    )
+    val idleDimAlphaPercent: StateFlow<Int> = _idleDimAlphaPercent.asStateFlow()
+
+    private val _scheduleStartHour = MutableStateFlow(
+        prefs.getInt(KEY_SCHEDULE_START_HOUR, 22).coerceIn(0, 23)
+    )
+    val scheduleStartHour: StateFlow<Int> = _scheduleStartHour.asStateFlow()
+
+    private val _scheduleEndHour = MutableStateFlow(
+        prefs.getInt(KEY_SCHEDULE_END_HOUR, 7).coerceIn(0, 23)
+    )
+    val scheduleEndHour: StateFlow<Int> = _scheduleEndHour.asStateFlow()
+
+    private val _swipeThresholdDp = MutableStateFlow(
+        prefs.getInt(KEY_SWIPE_THRESHOLD_DP, 32).coerceIn(16, 72)
+    )
+    val swipeThresholdDp: StateFlow<Int> = _swipeThresholdDp.asStateFlow()
+
+    private val _honeycombInnerRadiusDp = MutableStateFlow(
+        prefs.getInt(KEY_HONEYCOMB_INNER_RADIUS_DP, 108).coerceIn(80, 140)
+    )
+    val honeycombInnerRadiusDp: StateFlow<Int> = _honeycombInnerRadiusDp.asStateFlow()
+
+    private val _honeycombOuterRadiusDp = MutableStateFlow(
+        prefs.getInt(KEY_HONEYCOMB_OUTER_RADIUS_DP, 184).coerceIn(140, 230)
+    )
+    val honeycombOuterRadiusDp: StateFlow<Int> = _honeycombOuterRadiusDp.asStateFlow()
+
+    private val _pinnedHoneycombPackages = MutableStateFlow(loadPinnedHoneycombPackages())
+    val pinnedHoneycombPackages: StateFlow<List<String>> = _pinnedHoneycombPackages.asStateFlow()
+
+    private fun loadPinnedHoneycombPackages(): List<String> {
+        val raw = prefs.getString(KEY_PINNED_HONEYCOMB_PACKAGES, "") ?: ""
+        if (raw.isBlank()) return emptyList()
+        return raw.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(4)
+    }
+
     private fun loadCategoryCustomNames(): Map<AppCategory, String> {
         val map = mutableMapOf<AppCategory, String>()
         for (cat in AppCategory.values()) {
@@ -429,6 +484,80 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     fun setIdleDimEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(KEY_IDLE_DIM_ENABLED, enabled).apply()
         _idleDimEnabled.value = enabled
+    }
+
+    fun setCustomBackronym(backronym: String) {
+        val normalized = backronym.trim().ifEmpty { DEFAULT_BACKRONYM }
+        prefs.edit().putString(KEY_CUSTOM_BACKRONYM, normalized).apply()
+        _customBackronym.value = normalized
+    }
+
+    fun setIdleDimDelaySec(seconds: Int) {
+        val coerced = seconds.coerceIn(2, 30)
+        prefs.edit().putInt(KEY_IDLE_DIM_DELAY_SEC, coerced).apply()
+        _idleDimDelaySec.value = coerced
+    }
+
+    fun setIdleDimAlphaPercent(percent: Int) {
+        val coerced = percent.coerceIn(5, 70)
+        prefs.edit().putInt(KEY_IDLE_DIM_ALPHA_PERCENT, coerced).apply()
+        _idleDimAlphaPercent.value = coerced
+    }
+
+    fun setScheduleStartHour(hour: Int) {
+        val normalized = ((hour % 24) + 24) % 24
+        prefs.edit().putInt(KEY_SCHEDULE_START_HOUR, normalized).apply()
+        _scheduleStartHour.value = normalized
+    }
+
+    fun setScheduleEndHour(hour: Int) {
+        val normalized = ((hour % 24) + 24) % 24
+        prefs.edit().putInt(KEY_SCHEDULE_END_HOUR, normalized).apply()
+        _scheduleEndHour.value = normalized
+    }
+
+    fun setSwipeThresholdDp(dp: Int) {
+        val coerced = dp.coerceIn(16, 72)
+        prefs.edit().putInt(KEY_SWIPE_THRESHOLD_DP, coerced).apply()
+        _swipeThresholdDp.value = coerced
+    }
+
+    fun setHoneycombInnerRadiusDp(dp: Int) {
+        val coerced = dp.coerceIn(80, 140)
+        prefs.edit().putInt(KEY_HONEYCOMB_INNER_RADIUS_DP, coerced).apply()
+        _honeycombInnerRadiusDp.value = coerced
+    }
+
+    fun setHoneycombOuterRadiusDp(dp: Int) {
+        val coerced = dp.coerceIn(140, 230)
+        prefs.edit().putInt(KEY_HONEYCOMB_OUTER_RADIUS_DP, coerced).apply()
+        _honeycombOuterRadiusDp.value = coerced
+    }
+
+    fun setPinnedHoneycombPackages(packages: List<String>) {
+        val cleaned = packages.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(4)
+        prefs.edit().putString(KEY_PINNED_HONEYCOMB_PACKAGES, cleaned.joinToString(",")).apply()
+        _pinnedHoneycombPackages.value = cleaned
+    }
+
+    /**
+     * ハニカム展開への固定状態をトグルする（すでに4個固定中で新規追加しようとした場合は false を返す）
+     */
+    fun togglePinnedHoneycombPackage(packageName: String): Boolean {
+        val trimmed = packageName.trim()
+        if (trimmed.isBlank()) return false
+        val current = _pinnedHoneycombPackages.value.toMutableList()
+        return if (current.contains(trimmed)) {
+            current.remove(trimmed)
+            setPinnedHoneycombPackages(current)
+            true
+        } else if (current.size < 4) {
+            current.add(trimmed)
+            setPinnedHoneycombPackages(current)
+            true
+        } else {
+            false
+        }
     }
 
     fun updateAnchorText(text: String) {
@@ -618,6 +747,15 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _homeWidgetId.value = -1
         _homeWidgetHeightDp.value = 160
         _idleDimEnabled.value = true
+        _customBackronym.value = DEFAULT_BACKRONYM
+        _idleDimDelaySec.value = 5
+        _idleDimAlphaPercent.value = 24
+        _scheduleStartHour.value = 22
+        _scheduleEndHour.value = 7
+        _swipeThresholdDp.value = 32
+        _honeycombInnerRadiusDp.value = 108
+        _honeycombOuterRadiusDp.value = 184
+        _pinnedHoneycombPackages.value = emptyList()
     }
 
     fun isTrueBlackActive(): Boolean {
@@ -626,7 +764,13 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
             DisplayMode.WALLPAPER -> false
             DisplayMode.AUTO_SCHEDULE -> {
                 val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-                hour >= 22 || hour < 7
+                val start = _scheduleStartHour.value
+                val end = _scheduleEndHour.value
+                when {
+                    start == end -> false
+                    start < end -> hour in start until end
+                    else -> hour >= start || hour < end
+                }
             }
         }
     }
@@ -702,13 +846,23 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         _homeWidgetId.value = prefs.getInt(KEY_HOME_WIDGET_ID, -1)
         _homeWidgetHeightDp.value = prefs.getInt(KEY_HOME_WIDGET_HEIGHT_DP, 160).coerceIn(80, 420)
         _idleDimEnabled.value = prefs.getBoolean(KEY_IDLE_DIM_ENABLED, true)
+        _customBackronym.value = prefs.getString(KEY_CUSTOM_BACKRONYM, DEFAULT_BACKRONYM)
+            ?.takeIf { it.isNotBlank() } ?: DEFAULT_BACKRONYM
+        _idleDimDelaySec.value = prefs.getInt(KEY_IDLE_DIM_DELAY_SEC, 5).coerceIn(2, 30)
+        _idleDimAlphaPercent.value = prefs.getInt(KEY_IDLE_DIM_ALPHA_PERCENT, 24).coerceIn(5, 70)
+        _scheduleStartHour.value = prefs.getInt(KEY_SCHEDULE_START_HOUR, 22).coerceIn(0, 23)
+        _scheduleEndHour.value = prefs.getInt(KEY_SCHEDULE_END_HOUR, 7).coerceIn(0, 23)
+        _swipeThresholdDp.value = prefs.getInt(KEY_SWIPE_THRESHOLD_DP, 32).coerceIn(16, 72)
+        _honeycombInnerRadiusDp.value = prefs.getInt(KEY_HONEYCOMB_INNER_RADIUS_DP, 108).coerceIn(80, 140)
+        _honeycombOuterRadiusDp.value = prefs.getInt(KEY_HONEYCOMB_OUTER_RADIUS_DP, 184).coerceIn(140, 230)
+        _pinnedHoneycombPackages.value = loadPinnedHoneycombPackages()
     }
 
     private fun exportPreferencesObject(): JSONObject {
         val json = JSONObject()
         val all = prefs.all
         for ((key, value) in all) {
-            if (key == KEY_LAST_UPDATE_CHECK_TIME) continue
+            if (key in BACKUP_EXCLUDED_KEYS) continue
             when (value) {
                 is Boolean -> json.put(key, value)
                 is Int -> json.put(key, value)
@@ -788,15 +942,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
                     return BackupRestoreResult(false, 0, 0, false)
                 }
 
-                val lastCheckBackup = getLastUpdateCheckTime()
-                val editor = prefs.edit()
-                editor.clear()
-                if (lastCheckBackup > 0L) {
-                    editor.putLong(KEY_LAST_UPDATE_CHECK_TIME, lastCheckBackup)
-                }
-                val prefsRestored = writePreferenceEntries(editor, validPrefEntries)
-                editor.apply()
-                reloadFromPreferences()
+                val prefsRestored = applyPreferenceEntriesPreservingLocalOnly(validPrefEntries)
 
                 val usageRestored = if (hasLearning && usageJson != null && appRepository != null) {
                     appRepository.importUsageData(usageJson)
@@ -816,15 +962,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
                     return BackupRestoreResult(false, 0, 0, false)
                 }
 
-                val lastCheckBackup = getLastUpdateCheckTime()
-                val editor = prefs.edit()
-                editor.clear()
-                if (lastCheckBackup > 0L) {
-                    editor.putLong(KEY_LAST_UPDATE_CHECK_TIME, lastCheckBackup)
-                }
-                val prefsRestored = writePreferenceEntries(editor, validPrefEntries)
-                editor.apply()
-                reloadFromPreferences()
+                val prefsRestored = applyPreferenceEntriesPreservingLocalOnly(validPrefEntries)
 
                 BackupRestoreResult(
                     success = true,
@@ -836,6 +974,30 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         } catch (_: Exception) {
             BackupRestoreResult(false, 0, 0, false)
         }
+    }
+
+    private fun applyPreferenceEntriesPreservingLocalOnly(
+        entries: List<Pair<String, Any>>
+    ): Int {
+        val lastCheckBackup = getLastUpdateCheckTime()
+        val apiKeyBackup = prefs.getString(KEY_AI_API_KEY, "") ?: ""
+        val widgetIdBackup = prefs.getInt(KEY_HOME_WIDGET_ID, -1)
+
+        val editor = prefs.edit()
+        editor.clear()
+        if (lastCheckBackup > 0L) {
+            editor.putLong(KEY_LAST_UPDATE_CHECK_TIME, lastCheckBackup)
+        }
+        if (apiKeyBackup.isNotEmpty()) {
+            editor.putString(KEY_AI_API_KEY, apiKeyBackup)
+        }
+        if (widgetIdBackup != -1) {
+            editor.putInt(KEY_HOME_WIDGET_ID, widgetIdBackup)
+        }
+        val prefsRestored = writePreferenceEntries(editor, entries)
+        editor.apply()
+        reloadFromPreferences()
+        return prefsRestored
     }
 
     fun importFromJson(jsonString: String): Boolean {
@@ -850,7 +1012,7 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
             if (!key.startsWith("key_") && !key.startsWith("cat_label_")) {
                 continue
             }
-            if (key == KEY_LAST_UPDATE_CHECK_TIME) {
+            if (key in BACKUP_EXCLUDED_KEYS) {
                 continue
             }
             val value = prefsJson.opt(key) ?: continue
@@ -869,6 +1031,22 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
             when (value) {
                 is Boolean -> {
                     editor.putBoolean(key, value)
+                    count++
+                }
+                is Int -> {
+                    editor.putInt(key, value)
+                    count++
+                }
+                is Long -> {
+                    editor.putLong(key, value)
+                    count++
+                }
+                is Float -> {
+                    editor.putFloat(key, value)
+                    count++
+                }
+                is Double -> {
+                    editor.putFloat(key, value.toFloat())
                     count++
                 }
                 is Number -> {
@@ -904,6 +1082,13 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
     }
 
     companion object {
+        const val DEFAULT_BACKRONYM = "Anti-Dopamine Human-factor Drawer Launcher"
+        val BACKRONYM_PRESETS = listOf(
+            "Anti-Dopamine Human-factor Drawer Launcher",
+            "Attention-Deficit Hyperactivity Design Launcher",
+            "Anchor-Driven Habit & Digital-wellbeing Launcher"
+        )
+
         private const val KEY_ANCHOR_TEXT = "key_anchor_text"
         private const val KEY_DISPLAY_MODE = "key_display_mode"
         private const val KEY_HANDEDNESS = "key_handedness"
@@ -940,5 +1125,20 @@ class LauncherPreferences(private val prefs: SharedPreferences) {
         private const val KEY_HOME_WIDGET_HEIGHT_DP = "key_home_widget_height_dp"
         private const val KEY_IDLE_DIM_ENABLED = "key_idle_dim_enabled"
         private const val KEY_LAST_UPDATE_CHECK_TIME = "key_last_update_check_time"
+        private const val KEY_CUSTOM_BACKRONYM = "key_custom_backronym"
+        private const val KEY_IDLE_DIM_DELAY_SEC = "key_idle_dim_delay_sec"
+        private const val KEY_IDLE_DIM_ALPHA_PERCENT = "key_idle_dim_alpha_percent"
+        private const val KEY_SCHEDULE_START_HOUR = "key_schedule_start_hour"
+        private const val KEY_SCHEDULE_END_HOUR = "key_schedule_end_hour"
+        private const val KEY_SWIPE_THRESHOLD_DP = "key_swipe_threshold_dp"
+        private const val KEY_HONEYCOMB_INNER_RADIUS_DP = "key_honeycomb_inner_radius_dp"
+        private const val KEY_HONEYCOMB_OUTER_RADIUS_DP = "key_honeycomb_outer_radius_dp"
+        private const val KEY_PINNED_HONEYCOMB_PACKAGES = "key_pinned_honeycomb_packages"
+
+        private val BACKUP_EXCLUDED_KEYS = setOf(
+            KEY_LAST_UPDATE_CHECK_TIME,
+            KEY_AI_API_KEY,
+            KEY_HOME_WIDGET_ID
+        )
     }
 }

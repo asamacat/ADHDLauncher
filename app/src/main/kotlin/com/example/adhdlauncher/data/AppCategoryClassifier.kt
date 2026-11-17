@@ -88,16 +88,28 @@ object AppCategoryClassifier {
 
     fun getSearchAliases(): Map<String, String> = searchAliases
 
+    private val tokenSplitRegex = Regex("[^a-z0-9]+")
+
+    private fun matchesKeyword(lowerPkg: String, lowerLabel: String, kw: String): Boolean {
+        return if (kw.length <= 3 && kw.all { it in 'a'..'z' }) {
+            val pkgTokens = lowerPkg.split(tokenSplitRegex)
+            val labelTokens = lowerLabel.split(tokenSplitRegex)
+            pkgTokens.contains(kw) || labelTokens.contains(kw)
+        } else {
+            lowerPkg.contains(kw) || lowerLabel.contains(kw)
+        }
+    }
+
     fun classify(pkgName: String, label: String, appInfo: ApplicationInfo?): AppCategory {
         // 1. JSON辞書のパッケージ名完全一致
         packageRules[pkgName]?.let { return it }
 
-        // 2. JSON辞書のキーワード部分一致（多言語・各国語拡張対応）
+        // 2. JSON辞書のキーワード一致（短語ASCIIは誤爆防止のため単語境界で判定）
         val lowerPkg = pkgName.lowercase()
         val lowerLabel = label.lowercase()
 
         for ((category, keywords) in categoryKeywords) {
-            if (keywords.any { kw -> lowerPkg.contains(kw) || lowerLabel.contains(kw) }) {
+            if (keywords.any { kw -> matchesKeyword(lowerPkg, lowerLabel, kw) }) {
                 return category
             }
         }

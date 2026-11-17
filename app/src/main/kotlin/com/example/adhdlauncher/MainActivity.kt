@@ -219,6 +219,7 @@ fun LauncherMain(
     val discoverMode by preferences.discoverMode.collectAsState()
     val iconStyle by preferences.iconStyle.collectAsState()
     val honeycombAppCount by preferences.honeycombAppCount.collectAsState()
+    val pinnedHoneycombPackages by preferences.pinnedHoneycombPackages.collectAsState()
     val scope = rememberCoroutineScope()
 
     // 初回起動時・パッケージ変更時・アイコン変換スタイル変更時に一覧を更新
@@ -229,9 +230,9 @@ fun LauncherMain(
         )
     }
 
-    // 現在の曜日・時間帯の学習スコア + 利用頻度に基づくハニカム候補アプリ
-    val honeycombApps = remember(apps, honeycombAppCount) {
-        appRepository.getContextualTopApps(apps, honeycombAppCount)
+    // 現在の曜日・時間帯の学習スコア + 利用頻度 + 固定アプリに基づくハニカム候補アプリ
+    val honeycombApps = remember(apps, honeycombAppCount, pinnedHoneycombPackages) {
+        appRepository.getContextualTopApps(apps, honeycombAppCount, pinnedHoneycombPackages)
     }
 
     // ホームボタン・ホームジェスチャー押下時にドロワーや設定画面を閉じてホームへ戻る

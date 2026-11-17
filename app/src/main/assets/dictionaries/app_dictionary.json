@@ -102,6 +102,10 @@
     "TOOLS": [
       "clock", "calc", "file", "setting", "tool", "auth", "calendar", "note",
       "設定", "電卓", "翻訳", "認証", "文字変換", "時計", "メモ", "カレンダー"
+    ],
+    "GAMES": [
+      "game", "games", "rpg", "puzzle", "nintendo", "playstation", "xbox", "steam",
+      "ゲーム", "パズル"
     ]
   },
   "search_aliases": {

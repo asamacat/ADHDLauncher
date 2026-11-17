@@ -150,15 +150,29 @@ class AppRepository(
 
     /**
      * 画面タップ時のハニカム扇形ショートカット用：
-     * 現在の曜日・時間帯の平滑化コンテキストスコア（contextScore）を最優先し、全体の起動回数・直近起動時刻・システム使用統計を組み合わせて上位N件を返す
+     * ユーザーが固定したアプリ（最大4個・カメラ等）を先頭スロット（内側アーク）に確定配置し、
+     * 残りの枠を現在の曜日・時間帯の平滑化コンテキストスコア上位アプリで補完する
      */
-    fun getContextualTopApps(apps: List<AppInfo>, count: Int): List<AppInfo> {
-        return apps
+    fun getContextualTopApps(
+        apps: List<AppInfo>,
+        count: Int,
+        pinnedPackages: List<String> = emptyList()
+    ): List<AppInfo> {
+        val visibleApps = apps
             .filter { !it.isHidden }
             .map { app ->
                 val freshCtx = computeSmoothedContextScore(app.packageName)
                 if (freshCtx != app.contextScore) app.copy(contextScore = freshCtx) else app
             }
+
+        val pinnedApps = pinnedPackages
+            .mapNotNull { pkg -> visibleApps.firstOrNull { it.packageName == pkg } }
+            .distinctBy { it.packageName }
+            .take(4)
+        val pinnedSet = pinnedApps.map { it.packageName }.toSet()
+
+        val dynamicApps = visibleApps
+            .filterNot { it.packageName in pinnedSet }
             .sortedWith(
                 compareByDescending<AppInfo> { it.contextScore * 2 + it.launchCount }
                     .thenByDescending { it.contextScore }
@@ -166,7 +180,8 @@ class AppRepository(
                     .thenByDescending { it.systemUsageScore }
                     .thenBy { it.label.lowercase() }
             )
-            .take(count.coerceIn(1, 12))
+
+        return (pinnedApps + dynamicApps).take(count.coerceIn(1, 12))
     }
 
     fun launchApp(app: AppInfo): List<AppInfo> {

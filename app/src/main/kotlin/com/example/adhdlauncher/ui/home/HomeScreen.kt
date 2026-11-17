@@ -3,6 +3,7 @@ package com.example.adhdlauncher.ui.home
 import android.appwidget.AppWidgetHost
 import android.appwidget.AppWidgetManager
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -100,6 +101,12 @@ fun HomeScreen(
     val homeWidgetId by preferences.homeWidgetId.collectAsState()
     val homeWidgetHeightDp by preferences.homeWidgetHeightDp.collectAsState()
     val idleDimEnabled by preferences.idleDimEnabled.collectAsState()
+    val idleDimDelaySec by preferences.idleDimDelaySec.collectAsState()
+    val idleDimAlphaPercent by preferences.idleDimAlphaPercent.collectAsState()
+    val swipeThresholdDp by preferences.swipeThresholdDp.collectAsState()
+    val honeycombInnerRadiusDp by preferences.honeycombInnerRadiusDp.collectAsState()
+    val honeycombOuterRadiusDp by preferences.honeycombOuterRadiusDp.collectAsState()
+    val pinnedHoneycombPackages by preferences.pinnedHoneycombPackages.collectAsState()
 
     var isTrueBlack by remember(displayMode) { mutableStateOf(preferences.isTrueBlackActive()) }
 
@@ -128,27 +135,38 @@ fun HomeScreen(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val density = LocalDensity.current
+    val swipeThresholdPx = with(density) { swipeThresholdDp.dp.toPx() }
 
     // 画面タップ座標を中心とした動的ハニカム展開状態
     var honeycombCenter by remember { mutableStateOf<Offset?>(null) }
     var boxSize by remember { mutableStateOf(IntSize.Zero) }
 
+    // 予測型戻るジェスチャー対応: ハニカム展開や目的アンカー編集中なら戻る操作で閉じる
+    BackHandler(enabled = isEditingAnchor || honeycombCenter != null) {
+        if (isEditingAnchor) {
+            isEditingAnchor = false
+            focusManager.clearFocus()
+        } else {
+            honeycombCenter = null
+        }
+    }
+
     // 無操作時の半透明化（Idle Dimming）制御
     var lastInteractionTick by remember { mutableIntStateOf(0) }
     var isIdleDimmed by remember { mutableStateOf(false) }
 
-    LaunchedEffect(idleDimEnabled, lastInteractionTick, isEditingAnchor, honeycombCenter) {
+    LaunchedEffect(idleDimEnabled, idleDimDelaySec, lastInteractionTick, isEditingAnchor, honeycombCenter) {
         if (!idleDimEnabled || isEditingAnchor || honeycombCenter != null) {
             isIdleDimmed = false
         } else {
             isIdleDimmed = false
-            delay(5000L) // 5秒間無操作なら半透明フェード
+            delay(idleDimDelaySec * 1000L)
             isIdleDimmed = true
         }
     }
 
     val uiAlpha by animateFloatAsState(
-        targetValue = if (isIdleDimmed) 0.24f else 1.0f,
+        targetValue = if (isIdleDimmed) (idleDimAlphaPercent / 100f) else 1.0f,
         animationSpec = tween(durationMillis = if (isIdleDimmed) 650 else 150),
         label = "idleDimAlpha"
     )
@@ -205,16 +223,23 @@ fun HomeScreen(
                     }
                 )
             }
-            .pointerInput(gestureSwipeUpDrawer, gestureSwipeDownSearch) {
+            .pointerInput(gestureSwipeUpDrawer, gestureSwipeDownSearch, swipeThresholdPx) {
                 var triggered = false
+                var totalDragY = 0f
                 detectVerticalDragGestures(
-                    onDragStart = { triggered = false },
+                    onDragStart = {
+                        triggered = false
+                        totalDragY = 0f
+                    },
+                    onDragCancel = { totalDragY = 0f },
+                    onDragEnd = { totalDragY = 0f },
                     onVerticalDrag = { _, dragAmount ->
-                        if (!triggered && dragAmount < -18f && gestureSwipeUpDrawer) {
+                        totalDragY += dragAmount
+                        if (!triggered && totalDragY < -swipeThresholdPx && gestureSwipeUpDrawer) {
                             triggered = true
                             honeycombCenter = null
                             onOpenDrawer()
-                        } else if (!triggered && dragAmount > 18f && gestureSwipeDownSearch) {
+                        } else if (!triggered && totalDragY > swipeThresholdPx && gestureSwipeDownSearch) {
                             triggered = true
                             honeycombCenter = null
                             onOpenQuickSearch()
@@ -222,12 +247,19 @@ fun HomeScreen(
                     }
                 )
             }
-            .pointerInput(discoverMode) {
+            .pointerInput(discoverMode, swipeThresholdPx) {
                 var hTriggered = false
+                var totalDragX = 0f
                 detectHorizontalDragGestures(
-                    onDragStart = { hTriggered = false },
+                    onDragStart = {
+                        hTriggered = false
+                        totalDragX = 0f
+                    },
+                    onDragCancel = { totalDragX = 0f },
+                    onDragEnd = { totalDragX = 0f },
                     onHorizontalDrag = { _, dragAmount ->
-                        if (!hTriggered && dragAmount > 28f && discoverMode != DiscoverMode.OFF) {
+                        totalDragX += dragAmount
+                        if (!hTriggered && totalDragX > swipeThresholdPx && discoverMode != DiscoverMode.OFF) {
                             hTriggered = true
                             honeycombCenter = null
                             onOpenFeed()
@@ -327,6 +359,7 @@ fun HomeScreen(
                         BasicTextField(
                             value = anchorInputText,
                             onValueChange = { anchorInputText = it },
+                            singleLine = true,
                             textStyle = TextStyle(
                                 color = Color.White,
                                 fontSize = 15.sp,
@@ -493,6 +526,9 @@ fun HomeScreen(
                     screenHeight = boxSize.height.toFloat(),
                     handedness = handedness,
                     apps = displayApps,
+                    innerRadiusDp = honeycombInnerRadiusDp,
+                    outerRadiusDp = honeycombOuterRadiusDp,
+                    pinnedPackages = pinnedHoneycombPackages,
                     onSelectApp = { selected ->
                         honeycombCenter = null
                         onAppClick(selected)
@@ -515,14 +551,18 @@ private fun FanHoneycombPopupOverlay(
     screenHeight: Float,
     handedness: Handedness,
     apps: List<AppInfo>,
+    innerRadiusDp: Int,
+    outerRadiusDp: Int,
+    pinnedPackages: List<String>,
     onSelectApp: (AppInfo) -> Unit,
     onDismiss: () -> Unit
 ) {
     val density = LocalDensity.current
     val nodeSizeDp = 66.dp
     val nodeHalfPx = with(density) { (nodeSizeDp / 2).toPx() }
-    val arc1RadiusPx = with(density) { 108.dp.toPx() }
-    val arc2RadiusPx = with(density) { 184.dp.toPx() }
+    val arc1RadiusPx = with(density) { innerRadiusDp.dp.toPx() }
+    val arc2RadiusPx = with(density) { outerRadiusDp.dp.toPx() }
+    val pinnedSet = remember(pinnedPackages) { pinnedPackages.toSet() }
 
     // 画面端マージン
     val edgePaddingPx = nodeHalfPx + with(density) { 10.dp.toPx() }
@@ -596,6 +636,7 @@ private fun FanHoneycombPopupOverlay(
             val nodeY = rawY.coerceIn(edgePaddingPx, (screenHeight - edgePaddingPx).coerceAtLeast(edgePaddingPx))
 
             val isTopPriority = (index == 0)
+            val isPinned = app.packageName in pinnedSet
             Column(
                 modifier = Modifier
                     .offset {
@@ -607,11 +648,19 @@ private fun FanHoneycombPopupOverlay(
                     .size(nodeSizeDp)
                     .clip(HexagonShape)
                     .background(
-                        if (isTopPriority) Color(0xFF28322A) else Color(0xEB171B18)
+                        when {
+                            isPinned -> Color(0xFF1E2D33)
+                            isTopPriority -> Color(0xFF28322A)
+                            else -> Color(0xEB171B18)
+                        }
                     )
                     .border(
-                        width = if (isTopPriority) 2.dp else 1.2.dp,
-                        color = if (isTopPriority) Color(0xFF94A88B) else Color.White.copy(alpha = 0.24f),
+                        width = if (isPinned || isTopPriority) 2.dp else 1.2.dp,
+                        color = when {
+                            isPinned -> Color(0xFF80CBC4)
+                            isTopPriority -> Color(0xFF94A88B)
+                            else -> Color.White.copy(alpha = 0.24f)
+                        },
                         shape = HexagonShape
                     )
                     .clickable { onSelectApp(app) }

@@ -221,5 +221,33 @@ class AppCategoryClassifierTest {
         // Verify search aliases loaded
         val aliases = AppCategoryClassifier.getSearchAliases()
         assertTrue("Aliases should be loaded", aliases.isNotEmpty())
+
+        // Short ASCII keywords ("ana", "ai") should not match substrings inside unrelated words
+        assertEquals(
+            AppCategory.TOOLS,
+            AppCategoryClassifier.classify("com.example.files", "File Manager", null)
+        )
+        assertEquals(
+            AppCategory.TOOLS,
+            AppCategoryClassifier.classify("com.example.sketch", "Paint", null)
+        )
+        assertEquals(
+            AppCategory.TOOLS,
+            AppCategoryClassifier.classify("com.example.journal", "Daily Diary", null)
+        )
+        // Short ASCII keywords still match when appearing as standalone tokens
+        assertEquals(
+            AppCategory.FINANCE,
+            AppCategoryClassifier.classify("com.example.flight", "ANA Mileage", null)
+        )
+        assertEquals(
+            AppCategory.INTERNET,
+            AppCategoryClassifier.classify("com.example.assistant", "My AI Assistant", null)
+        )
+        // GAMES category keywords work in bundled dictionary
+        assertEquals(
+            AppCategory.GAMES,
+            AppCategoryClassifier.classify("com.example.fun", "Pixel RPG", null)
+        )
     }
 }

@@ -393,4 +393,106 @@ class LauncherPreferencesTest {
         val result = preferences.importBackupJson(badV2, appRepository)
         assertFalse(result.success)
     }
+
+    @Test
+    fun testExportBackup_excludesSensitiveApiKeyAndDeviceWidgetId() {
+        preferences.setAiApiKey("sk-secret-api-key-12345")
+        preferences.setHomeWidgetId(99)
+        preferences.setHandedness(Handedness.LEFT)
+
+        val flatJson = JSONObject(preferences.exportToJson())
+        assertFalse("API key must never be exported", flatJson.has("key_ai_api_key"))
+        assertFalse("Widget ID must never be exported", flatJson.has("key_home_widget_id"))
+        assertEquals("LEFT", flatJson.getString("key_handedness"))
+
+        val v2Root = JSONObject(preferences.exportBackupJson(includeLearningData = false, appRepository = appRepository))
+        val v2Prefs = v2Root.getJSONObject("preferences")
+        assertFalse("API key must not be in v2 envelope", v2Prefs.has("key_ai_api_key"))
+        assertFalse("Widget ID must not be in v2 envelope", v2Prefs.has("key_home_widget_id"))
+
+        // Malicious or legacy backup carrying an API key / widget ID must not overwrite local ones
+        val targetPrefs = FakeSharedPreferences()
+        val targetPreferences = LauncherPreferences(targetPrefs).apply {
+            setAiApiKey("my-existing-local-key")
+            setHomeWidgetId(42)
+        }
+        val importWithExcluded = """
+            {
+                "key_handedness": "LEFT",
+                "key_ai_api_key": "injected-foreign-key",
+                "key_home_widget_id": 777
+            }
+        """.trimIndent()
+        assertTrue(targetPreferences.importFromJson(importWithExcluded))
+        assertEquals(Handedness.LEFT, targetPreferences.handedness.value)
+        assertEquals("my-existing-local-key", targetPreferences.aiApiKey.value)
+        assertEquals(42, targetPreferences.homeWidgetId.value)
+    }
+
+    @Test
+    fun testCustomBackronymAndNumericBounds() {
+        assertEquals(LauncherPreferences.DEFAULT_BACKRONYM, preferences.customBackronym.value)
+        preferences.setCustomBackronym("Calm Focus Launcher")
+        assertEquals("Calm Focus Launcher", preferences.customBackronym.value)
+
+        // Blank resets back to default
+        preferences.setCustomBackronym("   ")
+        assertEquals(LauncherPreferences.DEFAULT_BACKRONYM, preferences.customBackronym.value)
+
+        // Numeric bounds coercion
+        preferences.setIdleDimDelaySec(100)
+        assertEquals(30, preferences.idleDimDelaySec.value)
+        preferences.setIdleDimDelaySec(0)
+        assertEquals(2, preferences.idleDimDelaySec.value)
+
+        preferences.setIdleDimAlphaPercent(90)
+        assertEquals(70, preferences.idleDimAlphaPercent.value)
+        preferences.setSwipeThresholdDp(5)
+        assertEquals(16, preferences.swipeThresholdDp.value)
+
+        preferences.setScheduleStartHour(25)
+        assertEquals(1, preferences.scheduleStartHour.value)
+        preferences.setScheduleEndHour(-1)
+        assertEquals(23, preferences.scheduleEndHour.value)
+
+        preferences.setHoneycombInnerRadiusDp(999)
+        assertEquals(140, preferences.honeycombInnerRadiusDp.value)
+        preferences.setHoneycombOuterRadiusDp(10)
+        assertEquals(140, preferences.honeycombOuterRadiusDp.value)
+    }
+
+    @Test
+    fun testPinnedHoneycombPackages_respectsMaxFourAndPrioritizesPinnedInContextualApps() {
+        assertTrue(preferences.togglePinnedHoneycombPackage("com.app.cam"))
+        assertTrue(preferences.togglePinnedHoneycombPackage("com.app.note"))
+        assertTrue(preferences.togglePinnedHoneycombPackage("com.app.cal"))
+        assertTrue(preferences.togglePinnedHoneycombPackage("com.app.calc"))
+        // 5th distinct package must be rejected while keeping first 4
+        assertFalse(preferences.togglePinnedHoneycombPackage("com.app.extra"))
+        assertEquals(4, preferences.pinnedHoneycombPackages.value.size)
+
+        // Toggle off works
+        assertTrue(preferences.togglePinnedHoneycombPackage("com.app.note"))
+        assertEquals(listOf("com.app.cam", "com.app.cal", "com.app.calc"), preferences.pinnedHoneycombPackages.value)
+
+        // Prepare dummy apps where dynamic high-usage app has high launchCount, while pinned camera has 0
+        val dummyApps = listOf(
+            AppInfo("com.app.frequent", ".Main", "Frequent", null, AppCategory.COMMUNICATION, launchCount = 100),
+            AppInfo("com.app.second", ".Main", "Second", null, AppCategory.INTERNET, launchCount = 50),
+            AppInfo("com.app.cam", ".Camera", "Camera", null, AppCategory.MEDIA, launchCount = 0),
+            AppInfo("com.app.calc", ".Calc", "Calculator", null, AppCategory.TOOLS, launchCount = 1)
+        )
+
+        val topApps = appRepository.getContextualTopApps(
+            apps = dummyApps,
+            count = 4,
+            pinnedPackages = preferences.pinnedHoneycombPackages.value
+        )
+        assertEquals(4, topApps.size)
+        // Pinned apps always take the first slots in pinned order, followed by highest contextual dynamic apps
+        assertEquals("com.app.cam", topApps[0].packageName)
+        assertEquals("com.app.calc", topApps[1].packageName)
+        assertEquals("com.app.frequent", topApps[2].packageName)
+        assertEquals("com.app.second", topApps[3].packageName)
+    }
 }

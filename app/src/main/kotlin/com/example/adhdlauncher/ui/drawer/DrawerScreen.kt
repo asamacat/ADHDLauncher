@@ -3,6 +3,7 @@ package com.example.adhdlauncher.ui.drawer
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -22,6 +23,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -83,6 +85,7 @@ fun DrawerScreen(
     val categoryCustomNames by preferences.categoryCustomNames.collectAsState()
     val hiddenCategories by preferences.hiddenCategories.collectAsState()
     val categoryOrder by preferences.categoryOrder.collectAsState()
+    val pinnedHoneycombPackages by preferences.pinnedHoneycombPackages.collectAsState()
 
     val visibleCategories = remember(categoryOrder, hiddenCategories) {
         categoryOrder.filter { it == AppCategory.ALL || it !in hiddenCategories }
@@ -470,6 +473,40 @@ fun DrawerScreen(
                         color = Color.White.copy(alpha = 0.1f),
                         modifier = Modifier.padding(vertical = 6.dp)
                     )
+
+                    val isPinnedToHoneycomb = targetApp.packageName in pinnedHoneycombPackages
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .combinedClickable(
+                                onClick = {
+                                    val ok = preferences.togglePinnedHoneycombPackage(targetApp.packageName)
+                                    val msg = when {
+                                        isPinnedToHoneycomb -> "ハニカム固定を解除しました"
+                                        ok -> "ハニカム展開に固定しました"
+                                        else -> "固定できるのは最大4個までです"
+                                    }
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    longPressedApp = null
+                                }
+                            )
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PushPin,
+                            contentDescription = null,
+                            tint = if (isPinnedToHoneycomb) Color(0xFF80CBC4) else Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = if (isPinnedToHoneycomb) "ハニカム展開から固定解除" else "ハニカム展開に固定する（最大4個）",
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                    }
 
                     Row(
                         modifier = Modifier

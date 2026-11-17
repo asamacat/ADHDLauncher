@@ -11,7 +11,7 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -98,9 +98,8 @@ fun PullDownSearchScreen(
         )
     }
 
-    // 課題3修正: 右利き設定時は4つのうち最もよく使う1位が右端に来るよう行単位で反転
-    val displayedApps = remember(candidateApps, query, startAppsCount, showAllAppsInSearch, handedness) {
-        val raw = if (query.isBlank()) {
+    val rawMatchedApps = remember(candidateApps, query, startAppsCount, showAllAppsInSearch) {
+        if (query.isBlank()) {
             if (showAllAppsInSearch) {
                 candidateApps
             } else {
@@ -109,12 +108,34 @@ fun PullDownSearchScreen(
         } else {
             candidateApps.filter { JapaneseSearchMatcher.matches(it, query) }
         }
+    }
 
-        if (handedness == Handedness.RIGHT) {
-            raw.chunked(4).flatMap { it.reversed() }
-        } else {
-            raw
+    val topMatchApp = rawMatchedApps.firstOrNull()
+
+    // 右利き設定時は4列単位で不足分を null で右寄せパディングして反転し、1位が常に最右端に並ぶようにする
+    val displayedSlots: List<AppInfo?> = remember(rawMatchedApps, handedness) {
+        if (rawMatchedApps.isEmpty()) return@remember emptyList()
+        rawMatchedApps.chunked(4).flatMap { chunk ->
+            val padded: List<AppInfo?> = if (chunk.size < 4) {
+                chunk + List(4 - chunk.size) { null }
+            } else {
+                chunk
+            }
+            if (handedness == Handedness.RIGHT) {
+                padded.reversed()
+            } else {
+                padded
+            }
         }
+    }
+
+    fun openExternalUri(uriString: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uriString)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (_: Exception) {}
     }
 
     Box(
@@ -214,8 +235,7 @@ fun PullDownSearchScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 keyboardController?.hide()
-                                val uri = Uri.parse(searchProvider.queryUrlPrefix + Uri.encode(query))
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                openExternalUri(searchProvider.queryUrlPrefix + Uri.encode(query))
                             }
                             .padding(vertical = 10.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -251,8 +271,7 @@ fun PullDownSearchScreen(
                             .clip(RoundedCornerShape(12.dp))
                             .clickable {
                                 keyboardController?.hide()
-                                val uri = Uri.parse("https://play.google.com/store/search?q=${Uri.encode(query)}&c=apps")
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                openExternalUri("https://play.google.com/store/search?q=${Uri.encode(query)}&c=apps")
                             }
                             .padding(vertical = 10.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -296,8 +315,8 @@ fun PullDownSearchScreen(
             ) {
                 Text(
                     text = when {
-                        query.isNotBlank() -> "一致するアプリ (${displayedApps.size})"
-                        showAllAppsInSearch -> "すべてのアプリ (${displayedApps.size})"
+                        query.isNotBlank() -> "一致するアプリ (${rawMatchedApps.size})"
+                        showAllAppsInSearch -> "すべてのアプリ (${rawMatchedApps.size})"
                         else -> "よく使うアプリ"
                     },
                     fontSize = 13.sp,
@@ -323,7 +342,7 @@ fun PullDownSearchScreen(
             Spacer(modifier = Modifier.height(6.dp))
 
             // 4. 下部親指ゾーン：よく使うアプリ4つ（または検索ヒット一覧）
-            if (displayedApps.isNotEmpty()) {
+            if (displayedSlots.isNotEmpty()) {
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(4),
                     reverseLayout = showAllAppsInSearch,
@@ -335,17 +354,27 @@ fun PullDownSearchScreen(
                         Modifier.wrapContentHeight()
                     }
                 ) {
-                    items(
-                        items = displayedApps,
-                        key = { "${it.packageName}:${it.activityName}" }
-                    ) { app ->
-                        SearchAppTile(
-                            app = app,
-                            onClick = {
-                                keyboardController?.hide()
-                                onAppClick(app)
+                    itemsIndexed(
+                        items = displayedSlots,
+                        key = { index, app ->
+                            if (app != null) {
+                                "${app.packageName}:${app.activityName}"
+                            } else {
+                                "empty_slot_$index"
                             }
-                        )
+                        }
+                    ) { _, app ->
+                        if (app != null) {
+                            SearchAppTile(
+                                app = app,
+                                onClick = {
+                                    keyboardController?.hide()
+                                    onAppClick(app)
+                                }
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(90.dp))
+                        }
                     }
                 }
             } else {
@@ -400,13 +429,11 @@ fun PullDownSearchScreen(
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions = KeyboardActions(
                                     onSearch = {
-                                        if (displayedApps.isNotEmpty()) {
+                                        if (topMatchApp != null) {
                                             keyboardController?.hide()
-                                            val target = if (handedness == Handedness.RIGHT) displayedApps.last() else displayedApps.first()
-                                            onAppClick(target)
+                                            onAppClick(topMatchApp)
                                         } else if (query.isNotBlank()) {
-                                            val uri = Uri.parse(searchProvider.queryUrlPrefix + Uri.encode(query))
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                            openExternalUri(searchProvider.queryUrlPrefix + Uri.encode(query))
                                         }
                                     }
                                 ),
